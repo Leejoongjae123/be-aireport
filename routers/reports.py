@@ -4,7 +4,7 @@
 사업계획서 생성, 검색, 재생성 기능을 제공합니다.
 """
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File
 from services.report import (
     GenerateBackgroundRequest,
     GenerateBackgroundResponse,
@@ -15,11 +15,16 @@ from services.report import (
     RegenerateRequest,
     RegenerateResponse,
     GenerateStartResponse,
+    EmbedReportRequest,
+    EmbedReportResponse,
+    UploadReportResponse,
     generate_background,
     generate_report,
     generate_start,
     report_regenerate,
-    search_reports
+    search_reports,
+    embed_report_start,
+    upload_report
 )
 
 
@@ -163,3 +168,72 @@ async def search_reports_endpoint(request: SearchRequest):
         유사도 기준 정렬된 보고서 목록
     """
     return await search_reports(request)
+
+
+@router.post("/embed", response_model=EmbedReportResponse)
+async def embed_report_endpoint(background_tasks: BackgroundTasks, request: EmbedReportRequest):
+    """
+    보고서 멀티모달 임베딩 처리 (백그라운드 비동기 처리)
+    
+    **주요 기능:**
+    - S3에서 PDF 파일 다운로드
+    - data 폴더에 파일 저장
+    - 멀티모달 임베딩 처리 (텍스트, 테이블, 이미지)
+    - 백그라운드에서 비동기 처리
+    - 완료 시 Supabase report_embed 테이블 업데이트
+    
+    **처리 과정:**
+    1. S3에서 파일 다운로드
+    2. data/{파일명_확장자제거}/ 폴더 생성
+    3. PDF 파싱 및 멀티모달 임베딩
+    4. output 폴더에 JSON 결과 저장
+    5. is_completed = true로 업데이트
+    
+    **사용 예시:**
+    ```json
+    {
+        "file_name": "강소기업1.pdf",
+        "embed_id": "uuid-string"
+    }
+    ```
+    
+    Args:
+        background_tasks: FastAPI 백그라운드 태스크
+        request: 임베딩 요청 (파일명, embed_id)
+        
+    Returns:
+        임베딩 시작 확인 메시지
+    """
+    return await embed_report_start(background_tasks, request)
+
+
+@router.post("/upload", response_model=UploadReportResponse)
+async def upload_report_endpoint(file: UploadFile = File(...)):
+    """
+    파일을 S3에 업로드
+    
+    **주요 기능:**
+    - 클라이언트에서 파일 직접 업로드
+    - AWS S3에 파일 저장
+    - S3 URL 반환
+    
+    **사용 방법:**
+    - Content-Type: multipart/form-data
+    - Form field name: file
+    - 파일을 직접 첨부하여 전송
+    
+    **예시 (curl):**
+    ```bash
+    curl -X POST "http://localhost:8000/api/reports/upload" \
+      -H "accept: application/json" \
+      -H "Content-Type: multipart/form-data" \
+      -F "file=@강소기업1.pdf"
+    ```
+    
+    Args:
+        file: 업로드할 파일 (multipart/form-data)
+        
+    Returns:
+        업로드 결과 및 S3 URL
+    """
+    return await upload_report(file)

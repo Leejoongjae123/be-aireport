@@ -80,7 +80,9 @@ async def root():
                     "POST /api/reports/generate/full - 전체 보고서 동기 생성",
                     "POST /api/reports/generate - 전체 보고서 비동기 생성",
                     "POST /api/reports/regenerate - 보고서 재생성",
-                    "POST /api/reports/search - 보고서 유사도 검색"
+                    "POST /api/reports/search - 보고서 유사도 검색",
+                    "POST /api/reports/embed - 보고서 멀티모달 임베딩 처리",
+                    "POST /api/reports/upload - 로컬 파일 S3 업로드"
                 ]
             }
         },

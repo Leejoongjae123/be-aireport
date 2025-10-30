@@ -1,4 +1,4 @@
-from fastapi import HTTPException, BackgroundTasks
+from fastapi import HTTPException, BackgroundTasks, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Union
 import os
@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from openai import OpenAI
 from supabase import create_client, Client
+import boto3
+from botocore.exceptions import ClientError
 
 
 def get_openai_client():
@@ -190,6 +192,27 @@ class GenerateStartResponse(BaseModel):
     success: bool
     message: str
     report_id: str
+
+
+class EmbedReportRequest(BaseModel):
+    """보고서 임베딩 요청 모델"""
+    file_name: str = Field(..., description="S3에 저장된 PDF 파일명 (예: 강소기업1.pdf)")
+    embed_id: str = Field(..., description="Supabase report_embed 테이블의 ID")
+
+
+class EmbedReportResponse(BaseModel):
+    """보고서 임베딩 응답 모델"""
+    success: bool
+    message: str
+    embed_id: str
+
+
+class UploadReportResponse(BaseModel):
+    """보고서 업로드 응답 모델"""
+    success: bool
+    message: str
+    file_name: str
+    s3_url: Optional[str] = None
 
 
 def generate_background_content(
@@ -654,6 +677,291 @@ async def report_regenerate(request: RegenerateRequest):
             result="error",
             contents=f"오류가 발생했습니다: {str(e)}",
             elapsed_seconds=elapsed_seconds
+        )
+
+
+def get_s3_client():
+    """S3 클라이언트를 반환합니다."""
+    aws_access_key = os.getenv("NEXT_PUBLIC_S3_ACCESS_KEY")
+    aws_secret_key = os.getenv("NEXT_PUBLIC_S3_SECRET_KEY")
+    aws_region = os.getenv("NEXT_PUBLIC_S3_REGION", "ap-northeast-2")
+    
+    if not aws_access_key or not aws_secret_key:
+        print("AWS 자격증명이 설정되지 않았습니다.")
+        return None
+    
+    try:
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key,
+            region_name=aws_region
+        )
+        return s3_client
+    except Exception as e:
+        print(f"S3 클라이언트 초기화 실패: {str(e)}")
+        return None
+
+
+def download_from_s3(file_name: str, local_path: Path) -> bool:
+    """
+    S3에서 파일을 다운로드합니다.
+    
+    Args:
+        file_name: S3에 저장된 파일명
+        local_path: 로컬에 저장할 경로
+    
+    Returns:
+        성공 여부
+    """
+    s3_client = get_s3_client()
+    if not s3_client:
+        return False
+    
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    if not bucket_name:
+        print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
+        return False
+    
+    try:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        s3_client.download_file(bucket_name, file_name, str(local_path))
+        print(f"S3에서 파일 다운로드 완료: {file_name} -> {local_path}")
+        return True
+    except ClientError as e:
+        print(f"S3 다운로드 실패: {str(e)}")
+        return False
+    except Exception as e:
+        print(f"파일 다운로드 중 오류: {str(e)}")
+        return False
+
+
+def upload_to_s3(file_name: str, local_path: Path) -> tuple[bool, Optional[str]]:
+    """
+    로컬 파일을 S3에 업로드합니다.
+    
+    Args:
+        file_name: S3에 저장할 파일명
+        local_path: 업로드할 로컬 파일 경로
+    
+    Returns:
+        (성공 여부, S3 URL)
+    """
+    s3_client = get_s3_client()
+    if not s3_client:
+        return False, None
+    
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    if not bucket_name:
+        print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
+        return False, None
+    
+    if not local_path.exists():
+        print(f"파일을 찾을 수 없습니다: {local_path}")
+        return False, None
+    
+    try:
+        s3_client.upload_file(str(local_path), bucket_name, file_name)
+        
+        aws_region = os.getenv("AWS_REGION", "ap-northeast-2")
+        s3_url = f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{file_name}"
+        
+        print(f"S3에 파일 업로드 완료: {local_path} -> s3://{bucket_name}/{file_name}")
+        return True, s3_url
+    except ClientError as e:
+        print(f"S3 업로드 실패: {str(e)}")
+        return False, None
+    except Exception as e:
+        print(f"파일 업로드 중 오류: {str(e)}")
+        return False, None
+
+
+async def upload_file_to_s3(file: UploadFile) -> tuple[bool, Optional[str], str]:
+    """
+    업로드된 파일을 S3에 직접 업로드합니다.
+    
+    Args:
+        file: FastAPI UploadFile 객체
+    
+    Returns:
+        (성공 여부, S3 URL, 파일명)
+    """
+    s3_client = get_s3_client()
+    if not s3_client:
+        return False, None, file.filename
+    
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    if not bucket_name:
+        print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
+        return False, None, file.filename
+    
+    try:
+        # 파일 내용 읽기
+        file_content = await file.read()
+        
+        # S3에 업로드
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=file.filename,
+            Body=file_content,
+            ContentType=file.content_type or 'application/pdf'
+        )
+        
+        aws_region = os.getenv("AWS_REGION", "ap-northeast-2")
+        s3_url = f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{file.filename}"
+        
+        print(f"S3에 파일 업로드 완료: {file.filename} -> s3://{bucket_name}/{file.filename}")
+        return True, s3_url, file.filename
+    except ClientError as e:
+        print(f"S3 업로드 실패: {str(e)}")
+        return False, None, file.filename
+    except Exception as e:
+        print(f"파일 업로드 중 오류: {str(e)}")
+        return False, None, file.filename
+
+
+def process_embed_report(request: EmbedReportRequest):
+    """
+    보고서 임베딩 처리 로직 (백그라운드 실행용)
+    
+    1. S3에서 파일 다운로드
+    2. data 폴더에 저장
+    3. 임베딩 처리
+    4. Supabase 업데이트
+    """
+    print(f"\n{'='*60}")
+    print(f"📊 보고서 임베딩 처리 시작")
+    print(f"{'='*60}")
+    print(f"파일명: {request.file_name}")
+    print(f"임베드 ID: {request.embed_id}")
+    print(f"{'='*60}\n")
+    
+    try:
+        # 1. 파일명에서 확장자 제거
+        base_name = request.file_name.replace(".pdf", "")
+        
+        # 2. data 폴더 경로 설정
+        current_dir = Path.cwd()
+        data_dir = current_dir / "data"
+        folder_path = data_dir / base_name
+        
+        # 3. 폴더 생성
+        folder_path.mkdir(parents=True, exist_ok=True)
+        print(f"📁 폴더 생성 완료: {folder_path}")
+        
+        # 4. S3에서 파일 다운로드
+        local_file_path = folder_path / request.file_name
+        print(f"⬇️  S3에서 파일 다운로드 중...")
+        
+        if not download_from_s3(request.file_name, local_file_path):
+            raise Exception("S3 파일 다운로드 실패")
+        
+        print(f"✅ 파일 다운로드 완료: {local_file_path}")
+        
+        # 5. 임베딩 처리
+        print(f"\n🔄 멀티모달 임베딩 처리 시작...")
+        from embedding import process_single_folder_by_name
+        
+        result = process_single_folder_by_name(base_name)
+        
+        if not result.get("success"):
+            raise Exception(f"임베딩 처리 실패: {result.get('error', 'Unknown error')}")
+        
+        print(f"✅ 임베딩 처리 완료")
+        print(f"   처리된 subsection: {result.get('processed', 0)}개")
+        
+        # 6. Supabase 업데이트
+        print(f"\n💾 Supabase 업데이트 중...")
+        supabase = get_supabase_client()
+        if not supabase:
+            raise Exception("Supabase 클라이언트 초기화 실패")
+        
+        supabase.table("report_embed").update({
+            "is_completed": True
+        }).eq("id", request.embed_id).execute()
+        
+        print(f"✅ Supabase 업데이트 완료: is_completed = True")
+        
+        print(f"\n{'='*60}")
+        print(f"✅ 보고서 임베딩 처리 완료!")
+        print(f"{'='*60}\n")
+        
+    except Exception as e:
+        print(f"\n{'='*60}")
+        print(f"❌ 보고서 임베딩 처리 실패")
+        print(f"{'='*60}")
+        print(f"오류: {str(e)}")
+        print(f"{'='*60}\n")
+        
+        # 실패 시에도 Supabase 업데이트 시도 (에러 로그 기록용)
+        try:
+            supabase = get_supabase_client()
+            if supabase:
+                supabase.table("report_embed").update({
+                    "is_completed": False,
+                    "error_message": str(e)
+                }).eq("id", request.embed_id).execute()
+        except:
+            pass
+
+
+async def embed_report_start(background_tasks: BackgroundTasks, request: EmbedReportRequest):
+    """
+    보고서 임베딩 처리를 백그라운드에서 시작합니다.
+    """
+    background_tasks.add_task(process_embed_report, request)
+    return EmbedReportResponse(
+        success=True,
+        message="embedding started",
+        embed_id=request.embed_id
+    )
+
+
+async def upload_report(file: UploadFile):
+    """
+    업로드된 파일을 S3에 저장합니다.
+    
+    Args:
+        file: FastAPI UploadFile 객체
+        
+    Returns:
+        업로드 결과
+    """
+    try:
+        # 파일 검증
+        if not file.filename:
+            return UploadReportResponse(
+                success=False,
+                message="파일명이 없습니다.",
+                file_name="",
+                s3_url=None
+            )
+        
+        # S3에 업로드
+        success, s3_url, file_name = await upload_file_to_s3(file)
+        
+        if success:
+            return UploadReportResponse(
+                success=True,
+                message="파일이 성공적으로 업로드되었습니다.",
+                file_name=file_name,
+                s3_url=s3_url
+            )
+        else:
+            return UploadReportResponse(
+                success=False,
+                message="S3 업로드에 실패했습니다.",
+                file_name=file_name,
+                s3_url=None
+            )
+            
+    except Exception as e:
+        return UploadReportResponse(
+            success=False,
+            message=f"업로드 중 오류가 발생했습니다: {str(e)}",
+            file_name=file.filename or "",
+            s3_url=None
         )
 
 
