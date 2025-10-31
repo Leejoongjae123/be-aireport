@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# FastAPI 애플리케이션 EC2 자동 배포 스크립트
+# FastAPI 애플리케이션 EC2 자동 배포 스크립트 (rsync 버전)
 
 set -e
 
 # 설정 변수
-EC2_HOST="54.180.120.201"  # EC2 인스턴스 IP 주소로 변경
+EC2_HOST="3.35.8.151"
 EC2_USER="ubuntu"
-SSH_KEY="ubuntu.pem"  # SSH 키 파일 경로
+SSH_KEY="ubuntu.pem"
 CONTAINER_NAME="fastapi-app"
 IMAGE_NAME="fastapi-app:latest"
 
@@ -15,23 +15,15 @@ IMAGE_NAME="fastapi-app:latest"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo "=========================================="
-echo "FastAPI 애플리케이션 EC2 배포 시작"
+echo "FastAPI 애플리케이션 EC2 배포 시작 (rsync)"
 echo "=========================================="
 
 # SSH 키 파일 확인
 if [ ! -f "$SSH_KEY" ]; then
     echo -e "${RED}❌ SSH 키 파일을 찾을 수 없습니다: $SSH_KEY${NC}"
-    echo "ubuntu.pem 파일을 현재 디렉토리에 배치하거나 SSH_KEY 변수를 수정하세요."
-    exit 1
-fi
-
-# EC2_HOST 확인
-if [ "$EC2_HOST" = "your-ec2-ip" ]; then
-    echo -e "${RED}❌ EC2_HOST를 실제 EC2 IP 주소로 변경해주세요.${NC}"
-    echo "스크립트 상단의 EC2_HOST 변수를 수정하세요."
     exit 1
 fi
 
@@ -45,18 +37,26 @@ echo -e "${YELLOW}2. Docker 이미지 압축 중...${NC}"
 docker save $IMAGE_NAME | gzip > /tmp/fastapi-app.tar.gz
 echo -e "${GREEN}✅ 이미지 압축 완료${NC}"
 
-# EC2로 이미지 전송
-echo -e "${YELLOW}3. EC2로 이미지 전송 중...${NC}"
-# 연결 안정성을 위한 옵션 추가
-# -o ServerAliveInterval=60: 60초마다 keep-alive 패킷 전송
-# -o ServerAliveCountMax=10: 최대 10번까지 재시도
-# -C: 압축 전송 (이미 gzip이지만 추가 압축)
-scp -i $SSH_KEY \
-    -o ServerAliveInterval=60 \
-    -o ServerAliveCountMax=10 \
-    -o Compression=yes \
-    -o TCPKeepAlive=yes \
-    /tmp/fastapi-app.tar.gz ${EC2_USER}@${EC2_HOST}:/tmp/
+# 파일 크기 확인
+FILE_SIZE=$(du -h /tmp/fastapi-app.tar.gz | cut -f1)
+echo "압축된 이미지 크기: $FILE_SIZE"
+
+# EC2로 이미지 전송 (rsync 사용 - 중단 시 이어받기 가능)
+echo -e "${YELLOW}3. EC2로 이미지 전송 중 (rsync)...${NC}"
+echo "rsync는 중단되어도 이어서 전송할 수 있습니다."
+
+# rsync 옵션:
+# -a: 아카이브 모드
+# -v: 상세 출력
+# -z: 압축 전송
+# -P: 진행상황 표시 + 부분 전송 유지 (중단 시 이어받기)
+# --partial: 부분 전송된 파일 유지
+# --progress: 진행률 표시
+rsync -avzP --partial \
+    -e "ssh -i $SSH_KEY -o ServerAliveInterval=60 -o ServerAliveCountMax=10" \
+    /tmp/fastapi-app.tar.gz \
+    ${EC2_USER}@${EC2_HOST}:/tmp/
+
 echo -e "${GREEN}✅ 이미지 전송 완료${NC}"
 
 # 임시 파일 삭제
@@ -64,7 +64,10 @@ rm /tmp/fastapi-app.tar.gz
 
 # EC2에서 배포 실행
 echo -e "${YELLOW}4. EC2에서 애플리케이션 배포 중...${NC}"
-ssh -i $SSH_KEY ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+ssh -i $SSH_KEY \
+    -o ServerAliveInterval=60 \
+    -o ServerAliveCountMax=10 \
+    ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
 set -e
 
 # 환경 변수 로드
@@ -101,8 +104,8 @@ docker run -d \
     --restart unless-stopped \
     fastapi-app:latest
 
-# 컨테이너 시작 대기 (초기화 시간 확보)
-echo "컨테이너 시작 대기 중 (애플리케이션 초기화 중)..."
+# 컨테이너 시작 대기
+echo "컨테이너 시작 대기 중..."
 sleep 15
 
 # 컨테이너 상태 확인
@@ -110,15 +113,15 @@ if [ "$(docker ps -q -f name=fastapi-app)" ]; then
     echo "✅ 컨테이너가 성공적으로 시작되었습니다!"
     docker ps -f name=fastapi-app
     echo ""
-    echo "애플리케이션 로그 확인:"
+    echo "애플리케이션 로그:"
     docker logs --tail 20 fastapi-app
 else
-    echo "❌ 컨테이너 시작 실패. 로그를 확인하세요:"
+    echo "❌ 컨테이너 시작 실패. 로그:"
     docker logs fastapi-app
     exit 1
 fi
 
-# 사용하지 않는 이미지 정리
+# 이미지 정리
 echo "사용하지 않는 Docker 이미지 정리..."
 docker image prune -f
 
@@ -131,10 +134,8 @@ echo ""
 echo "=========================================="
 echo "배포 확인"
 echo "=========================================="
-echo -e "${YELLOW}헬스 체크 중 (애플리케이션 준비 대기)...${NC}"
-echo "최대 60초 동안 헬스 체크를 시도합니다..."
+echo -e "${YELLOW}헬스 체크 중...${NC}"
 
-# 최대 60초 동안 헬스 체크 재시도
 for i in {1..12}; do
     if curl -f -s --max-time 10 http://${EC2_HOST}:8000/health > /dev/null 2>&1; then
         echo -e "${GREEN}✅ 애플리케이션이 정상적으로 실행 중입니다!${NC}"
@@ -142,19 +143,17 @@ for i in {1..12}; do
         echo "접속 정보:"
         echo "  - API 문서: http://${EC2_HOST}:8000/docs"
         echo "  - 헬스 체크: http://${EC2_HOST}:8000/health"
-        echo ""
         break
     else
         if [ $i -lt 12 ]; then
             echo "시도 $i/12 실패, 5초 후 재시도..."
             sleep 5
         else
-            echo -e "${RED}⚠️  헬스 체크 실패. 로그를 확인하세요:${NC}"
-            echo "  ssh -i $SSH_KEY ${EC2_USER}@${EC2_HOST} 'docker logs fastapi-app'"
+            echo -e "${RED}⚠️  헬스 체크 실패${NC}"
+            echo "로그 확인: ssh -i $SSH_KEY ${EC2_USER}@${EC2_HOST} 'docker logs fastapi-app'"
         fi
     fi
 done
 
 echo ""
 echo "로그 확인: ssh -i $SSH_KEY ${EC2_USER}@${EC2_HOST} 'docker logs -f fastapi-app'"
-echo ""

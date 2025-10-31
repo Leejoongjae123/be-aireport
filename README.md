@@ -454,7 +454,7 @@
 
 **Endpoint**: `POST /api/reports/upload`
 
-**설명**: 클라이언트에서 파일을 직접 업로드하여 S3에 저장합니다.
+**설명**: 클라이언트에서 파일을 직접 업로드하여 S3에 저장합니다. S3에 동일한 파일명이 이미 존재하는 경우 업로드가 거부됩니다.
 
 **Request**:
 - **Content-Type**: `multipart/form-data`
@@ -469,7 +469,7 @@ curl -X POST "http://localhost:8000/api/reports/upload" \
   -F "file=@강소기업1.pdf"
 ```
 
-**Response**:
+**성공 Response**:
 ```json
 {
   "success": true,
@@ -478,6 +478,20 @@ curl -X POST "http://localhost:8000/api/reports/upload" \
   "s3_url": "https://bucket-name.s3.ap-northeast-2.amazonaws.com/강소기업1.pdf"
 }
 ```
+
+**실패 Response (중복 파일)**:
+```json
+{
+  "success": false,
+  "message": "S3에 이미 동일한 파일명(강소기업1.pdf)이 존재합니다.",
+  "file_name": "강소기업1.pdf",
+  "s3_url": null
+}
+```
+
+**주의사항**:
+- S3에 동일한 파일명이 존재하면 업로드가 거부됩니다
+- 파일을 덮어쓰려면 기존 파일을 먼저 삭제해야 합니다
 
 ---
 

@@ -1,19 +1,38 @@
-# Python 3.11 slim 이미지 사용
-FROM python:3.11-slim
+# Multi-stage build로 이미지 크기 최적화
+FROM python:3.11-slim as builder
 
-# 작업 디렉토리 설정
 WORKDIR /app
 
-# 시스템 패키지 업데이트 및 필요한 패키지 설치
+# 빌드 도구 설치
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# requirements.txt 복사 및 패키지 설치
+# requirements 복사 및 패키지 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --user -r requirements.txt
+
+# 최종 이미지
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# unstructured[pdf]를 위한 런타임 의존성만 설치
+RUN apt-get update && apt-get install -y \
+    poppler-utils \
+    tesseract-ocr \
+    libtesseract-dev \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# builder에서 설치된 패키지 복사
+COPY --from=builder /root/.local /root/.local
+
+# PATH 설정
+ENV PATH=/root/.local/bin:$PATH
 
 # 애플리케이션 코드 복사
 COPY . .

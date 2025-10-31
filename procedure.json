@@ -1,0 +1,260 @@
+{
+  "sections": [
+    {
+      "id": "1",
+      "name": "1. 사업 개요",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "1-1",
+          "name": "1.1 추진 배경 및 필요성 (정책적·기술적 동향 포함)",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "1-2",
+          "name": "1.2 사업 목적 및 비전",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "1-3",
+          "name": "1.3 목표 시장 및 수요 분석",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "2. 연구개발 목표 및 전략",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "2-1",
+          "name": "2.1 최종 목표",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "2-2",
+          "name": "2.2 단계별 목표 (연차별, KPI 포함)",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "2-3",
+          "name": "2.3 사업화 및 확산 전략",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "name": "3. 기술 및 서비스 개요",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "3-1",
+          "name": "3.1 활용 기술 및 알고리즘 수준 및 완성도",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "3-2",
+          "name": "3.2 데이터 확보 및 품질 관리 방안",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "3-3",
+          "name": "3.3 서비스 개념, 혁신성 및 우수성",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "name": "4. 추진체계 및 수행역량",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "4-1",
+          "name": "4.1 수행기관 현황 및 전문성",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "4-2",
+          "name": "4.2 연구개발팀 및 인력 현황",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "4-3",
+          "name": "4.3 컨소시엄/참여기관 구성 및 역할",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "name": "5. 사업 추진계획",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "5-1",
+          "name": "5.1 추진 전략 및 방법론",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "5-2",
+          "name": "5.2 단계별 추진 일정",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "5-3",
+          "name": "5.3 실증 및 검증 계획",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "name": "6. 자원 및 예산 계획",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "6-1",
+          "name": "6.1 연구개발비 지원·부담 계획",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "6-2",
+          "name": "6.2 인건비, 장비, 운영비 세부내역",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "6-3",
+          "name": "6.3 투자/재원 조달 방안",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "7",
+      "name": "7. 안전 및 보안 관리",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "7-1",
+          "name": "7.1 안전조치 이행계획",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "7-2",
+          "name": "7.2 보안조치 이행계획",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "7-3",
+          "name": "7.3 개인정보/데이터 관리 방안",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "name": "8. 성과 및 기대효과",
+      "enabled": true,
+      "subsections": [
+        {
+          "id": "8-1",
+          "name": "8.1 성과목표 (KPI, 성능지표)",
+          "order": 0,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "8-2",
+          "name": "8.2 정량적 성과 (매출, 고용, 수출 등)",
+          "order": 1,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "8-3",
+          "name": "8.3 정성적 성과 (혁신생태계, 사회적 파급효과 등)",
+          "order": 2,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        },
+        {
+          "id": "8-4",
+          "name": "8.4 성과 활용 및 사업화 방안",
+          "order": 3,
+          "enabled": true,
+          "maxChar": 500,
+          "minChar": 300
+        }
+      ]
+    }
+  ]
+}

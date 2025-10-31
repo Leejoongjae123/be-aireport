@@ -777,7 +777,7 @@ def upload_to_s3(file_name: str, local_path: Path) -> tuple[bool, Optional[str]]
         return False, None
 
 
-async def upload_file_to_s3(file: UploadFile) -> tuple[bool, Optional[str], str]:
+async def upload_file_to_s3(file: UploadFile) -> tuple[bool, Optional[str], str, Optional[str]]:
     """
     업로드된 파일을 S3에 직접 업로드합니다.
     
@@ -785,18 +785,30 @@ async def upload_file_to_s3(file: UploadFile) -> tuple[bool, Optional[str], str]
         file: FastAPI UploadFile 객체
     
     Returns:
-        (성공 여부, S3 URL, 파일명)
+        (성공 여부, S3 URL, 파일명, 에러 메시지)
     """
     s3_client = get_s3_client()
     if not s3_client:
-        return False, None, file.filename
+        return False, None, file.filename, "S3 클라이언트 초기화 실패"
     
     bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
     if not bucket_name:
         print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
-        return False, None, file.filename
+        return False, None, file.filename, "AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다."
     
     try:
+        # S3에 동일한 파일명이 존재하는지 확인
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=file.filename)
+            # 파일이 존재하면 에러 반환
+            error_msg = f"동일한 파일명({file.filename})이 존재합니다. 파일명을 변경해주세요"
+            print(error_msg)
+            return False, None, file.filename, error_msg
+        except ClientError as e:
+            # 404 에러면 파일이 없는 것이므로 업로드 진행
+            if e.response['Error']['Code'] != '404':
+                raise e
+        
         # 파일 내용 읽기
         file_content = await file.read()
         
@@ -812,13 +824,15 @@ async def upload_file_to_s3(file: UploadFile) -> tuple[bool, Optional[str], str]
         s3_url = f"https://{bucket_name}.s3.{aws_region}.amazonaws.com/{file.filename}"
         
         print(f"S3에 파일 업로드 완료: {file.filename} -> s3://{bucket_name}/{file.filename}")
-        return True, s3_url, file.filename
+        return True, s3_url, file.filename, None
     except ClientError as e:
-        print(f"S3 업로드 실패: {str(e)}")
-        return False, None, file.filename
+        error_msg = f"S3 업로드 실패: {str(e)}"
+        print(error_msg)
+        return False, None, file.filename, error_msg
     except Exception as e:
-        print(f"파일 업로드 중 오류: {str(e)}")
-        return False, None, file.filename
+        error_msg = f"파일 업로드 중 오류: {str(e)}"
+        print(error_msg)
+        return False, None, file.filename, error_msg
 
 
 def process_embed_report(request: EmbedReportRequest):
@@ -939,7 +953,7 @@ async def upload_report(file: UploadFile):
             )
         
         # S3에 업로드
-        success, s3_url, file_name = await upload_file_to_s3(file)
+        success, s3_url, file_name, error_message = await upload_file_to_s3(file)
         
         if success:
             return UploadReportResponse(
@@ -951,7 +965,7 @@ async def upload_report(file: UploadFile):
         else:
             return UploadReportResponse(
                 success=False,
-                message="S3 업로드에 실패했습니다.",
+                message=error_message or "S3 업로드에 실패했습니다.",
                 file_name=file_name,
                 s3_url=None
             )
