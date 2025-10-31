@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 # 라우터 import
-from routers import diagnosis, expert, reports
+from routers import diagnosis, expert, reports, jobs
 
 app = FastAPI(
     title="사업계획서 생성 API", 
@@ -29,6 +29,10 @@ app = FastAPI(
         {
             "name": "Reports",
             "description": "보고서 생성 및 관리 - 사업계획서 생성, 검색, 재생성"
+        },
+        {
+            "name": "Jobs",
+            "description": "작업 상태 관리 - Celery 태스크 상태 조회 및 관리"
         }
     ]
 )
@@ -46,6 +50,7 @@ app.add_middleware(
 app.include_router(diagnosis.router)
 app.include_router(expert.router)
 app.include_router(reports.router)
+app.include_router(jobs.router)
 
 
 @app.get("/", tags=["Root"])

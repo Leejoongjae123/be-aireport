@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - fastapi-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   fastapi-app:
     build:
       context: .
@@ -16,6 +33,7 @@ services:
       - NEXT_PUBLIC_HF_TOKEN=${NEXT_PUBLIC_HF_TOKEN}
       - NEXT_PUBLIC_S3_ACCESS_KEY=${NEXT_PUBLIC_S3_ACCESS_KEY}
       - NEXT_PUBLIC_S3_SECRET_KEY=${NEXT_PUBLIC_S3_SECRET_KEY}
+      - REDIS_URL=redis://redis:6379/0
     env_file:
       - .env
     restart: unless-stopped
@@ -30,6 +48,39 @@ services:
       - ./data:/app/data
     networks:
       - fastapi-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: celery-worker
+    command: celery -A celery_worker worker --loglevel=info --concurrency=2 -Q report_generation,report_embedding
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - NEXT_PUBLIC_ACCESS_TOKEN=${NEXT_PUBLIC_ACCESS_TOKEN}
+      - NEXT_PUBLIC_HF_TOKEN=${NEXT_PUBLIC_HF_TOKEN}
+      - NEXT_PUBLIC_S3_ACCESS_KEY=${NEXT_PUBLIC_S3_ACCESS_KEY}
+      - NEXT_PUBLIC_S3_SECRET_KEY=${NEXT_PUBLIC_S3_SECRET_KEY}
+      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - fastapi-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis-data:
 
 networks:
   fastapi-network:

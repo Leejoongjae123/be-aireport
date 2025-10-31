@@ -523,10 +523,21 @@ async def generate_report(request: GenerateReportRequest):
 
 async def generate_start(background_tasks: BackgroundTasks, request: GenerateReportRequest):
     """
-    즉시 성공을 반환하고, 보고서 생성은 백그라운드에서 실행합니다.
+    즉시 성공을 반환하고, 보고서 생성은 Celery 태스크로 실행합니다.
     """
-    background_tasks.add_task(process_report_generation, request)
-    return GenerateStartResponse(success=True, message="generation started", report_id=request.report_id)
+    from tasks.report_tasks import generate_report_task
+    
+    # Celery 태스크 실행
+    task = generate_report_task.apply_async(
+        args=[request.business_idea, request.core_value, request.file_name, request.report_id],
+        queue="report_generation"
+    )
+    
+    return GenerateStartResponse(
+        success=True, 
+        message=f"generation started (task_id: {task.id})", 
+        report_id=request.report_id
+    )
 
 
 async def report_regenerate(request: RegenerateRequest):
@@ -922,12 +933,19 @@ def process_embed_report(request: EmbedReportRequest):
 
 async def embed_report_start(background_tasks: BackgroundTasks, request: EmbedReportRequest):
     """
-    보고서 임베딩 처리를 백그라운드에서 시작합니다.
+    보고서 임베딩 처리를 Celery 태스크로 시작합니다.
     """
-    background_tasks.add_task(process_embed_report, request)
+    from tasks.report_tasks import embed_report_task
+    
+    # Celery 태스크 실행
+    task = embed_report_task.apply_async(
+        args=[request.file_name, request.embed_id],
+        queue="report_embedding"
+    )
+    
     return EmbedReportResponse(
         success=True,
-        message="embedding started",
+        message=f"embedding started (task_id: {task.id})",
         embed_id=request.embed_id
     )
 

@@ -16,6 +16,7 @@
 2. [진단 API](#2-진단-api)
 3. [전문가 매칭 API](#3-전문가-매칭-api)
 4. [보고서 생성 및 관리 API](#4-보고서-생성-및-관리-api)
+5. [작업 상태 관리 API](#5-작업-상태-관리-api)
 
 ---
 
@@ -311,15 +312,22 @@
 ```json
 {
   "success": true,
-  "message": "generation started",
+  "message": "generation started (task_id: abc123-task-id)",
   "report_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 **처리 과정**:
-1. 백그라운드에서 모든 섹션 순차 생성
+1. Celery 태스크로 백그라운드에서 모든 섹션 순차 생성
 2. 각 섹션을 `report_sections` 테이블에 개별 저장
 3. 완료 시 `report_create` 테이블의 `is_complete` = `true`로 업데이트
+4. `/api/jobs/status/{task_id}`로 작업 상태 확인 가능
+
+**작업 상태 확인**:
+```bash
+# 반환된 task_id로 작업 상태 조회
+GET /api/jobs/status/abc123-task-id
+```
 
 ---
 
@@ -436,17 +444,25 @@
 ```json
 {
   "success": true,
-  "message": "embedding started",
+  "message": "embedding started (task_id: def456-task-id)",
   "embed_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 **처리 과정**:
-1. S3에서 PDF 파일 다운로드
-2. `data/{파일명_확장자제거}/` 폴더에 저장
-3. PDF 파싱 및 멀티모달 임베딩 (텍스트, 테이블, 이미지)
-4. `output` 폴더에 JSON 결과 저장
-5. `report_embed` 테이블의 `is_completed` = `true`로 업데이트
+1. Celery 태스크로 백그라운드에서 처리 시작
+2. S3에서 PDF 파일 다운로드
+3. `data/{파일명_확장자제거}/` 폴더에 저장
+4. PDF 파싱 및 멀티모달 임베딩 (텍스트, 테이블, 이미지)
+5. `output` 폴더에 JSON 결과 저장
+6. `report_embed` 테이블의 `is_completed` = `true`로 업데이트
+7. `/api/jobs/status/{task_id}`로 작업 상태 확인 가능
+
+**작업 상태 확인**:
+```bash
+# 반환된 task_id로 작업 상태 조회
+GET /api/jobs/status/def456-task-id
+```
 
 ---
 
@@ -495,6 +511,92 @@ curl -X POST "http://localhost:8000/api/reports/upload" \
 
 ---
 
+## 5. 작업 상태 관리 API
+
+### 5.1 작업 상태 조회
+
+**Endpoint**: `GET /api/jobs/status/{task_id}`
+
+**설명**: Celery 태스크의 현재 상태를 조회합니다.
+
+**Path Parameters**:
+- `task_id` (required): Celery 태스크 ID
+
+**Response**:
+```json
+{
+  "task_id": "abc123-task-id",
+  "status": "PROGRESS",
+  "result": null,
+  "error": null,
+  "meta": {
+    "status": "보고서 생성 중...",
+    "report_id": "550e8400-e29b-41d4-a716-446655440000",
+    "current": 50,
+    "total": 100
+  }
+}
+```
+
+**작업 상태**:
+- `PENDING`: 작업이 대기 중
+- `STARTED`: 작업이 시작됨
+- `PROGRESS`: 작업이 진행 중
+- `SUCCESS`: 작업이 성공적으로 완료됨
+- `FAILURE`: 작업이 실패함
+- `RETRY`: 작업이 재시도 중
+
+---
+
+### 5.2 작업 목록 조회
+
+**Endpoint**: `GET /api/jobs/list`
+
+**설명**: 현재 실행 중이거나 예약된 작업 목록을 조회합니다.
+
+**Response**:
+```json
+{
+  "active": [
+    {
+      "worker": "celery@worker1",
+      "task_id": "abc123-task-id",
+      "name": "tasks.report_tasks.generate_report_task",
+      "args": ["AI 기반 헬스케어", "개인 맞춤형", "강소기업1.pdf", "uuid"],
+      "kwargs": {}
+    }
+  ],
+  "scheduled": [],
+  "reserved": []
+}
+```
+
+---
+
+### 5.3 작업 취소
+
+**Endpoint**: `DELETE /api/jobs/cancel/{task_id}`
+
+**설명**: 실행 중인 작업을 취소합니다.
+
+**Path Parameters**:
+- `task_id` (required): Celery 태스크 ID
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "작업 취소 요청이 전송되었습니다.",
+  "task_id": "abc123-task-id"
+}
+```
+
+**주의사항**:
+- 이미 시작된 작업은 즉시 중단되지 않을 수 있습니다
+- 작업이 완료된 후에는 취소할 수 없습니다
+
+---
+
 ## 환경 변수 설정
 
 프로젝트 실행을 위해 다음 환경 변수를 설정해야 합니다:
@@ -513,6 +615,9 @@ NEXT_PUBLIC_S3_SECRET_KEY=your_s3_secret_key
 NEXT_PUBLIC_S3_REGION=ap-northeast-2
 AWS_S3_BUCKET_NAME=your_bucket_name
 AWS_REGION=ap-northeast-2
+
+# Redis (Celery)
+REDIS_URL=redis://localhost:6379/0
 ```
 
 ---
@@ -525,7 +630,13 @@ AWS_REGION=ap-northeast-2
 # 의존성 설치
 pip install -r requirements.txt
 
-# 서버 실행
+# Redis 서버 실행 (별도 터미널)
+redis-server
+
+# Celery 워커 실행 (별도 터미널)
+celery -A celery_worker worker --loglevel=info --concurrency=2 -Q report_generation,report_embedding
+
+# FastAPI 서버 실행
 python main.py
 ```
 
@@ -541,11 +652,23 @@ docker build -t report-api .
 docker run -p 8000:8000 --env-file .env report-api
 ```
 
-### Docker Compose 실행
+### Docker Compose 실행 (권장)
 
 ```bash
+# 모든 서비스 시작 (FastAPI, Redis, Celery Worker)
 docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f
+
+# 서비스 중지
+docker-compose down
 ```
+
+**실행되는 서비스**:
+- `redis`: Redis 서버 (포트 6379)
+- `fastapi-app`: FastAPI 애플리케이션 (포트 8000)
+- `celery-worker`: Celery 워커 (백그라운드 작업 처리)
 
 ---
 
@@ -585,13 +708,20 @@ docker-compose up -d
 ### 3. 보고서 생성
 - 참고 자료 기반 자동 보고서 생성
 - 섹션별 개별 생성 및 관리
-- 비동기 처리로 빠른 응답
+- Celery 기반 비동기 처리로 빠른 응답
+- Redis를 통한 안정적인 작업 큐 관리
 
 ### 4. 보고서 관리
 - 다양한 스타일 재생성 (자세히/간결하게/윤문)
 - 특허/뉴스 검색 기능
 - 벡터 임베딩 기반 유사도 검색
 - S3 연동 파일 업로드/다운로드
+
+### 5. 백그라운드 작업 관리
+- Celery와 Redis 기반 분산 작업 처리
+- 서버 재시작 시에도 작업 유지
+- 실시간 작업 상태 조회
+- 작업 취소 및 재시도 기능
 
 ---
 
