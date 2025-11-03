@@ -331,11 +331,11 @@ GET /api/jobs/status/abc123-task-id
 
 ---
 
-### 4.2 보고서 재생성
+### 4.2 보고서 재생성 (비동기)
 
 **Endpoint**: `POST /api/reports/regenerate`
 
-**설명**: 기존 보고서 내용을 다양한 스타일로 재생성하거나 추가 정보를 검색합니다.
+**설명**: 기존 보고서 내용을 다양한 스타일로 재생성하거나 추가 정보를 검색합니다. Celery를 통해 백그라운드에서 비동기로 처리됩니다.
 
 **Request Body**:
 
@@ -368,10 +368,21 @@ GET /api/jobs/status/abc123-task-id
 **Response**:
 ```json
 {
-  "result": "success",
-  "contents": "재생성된 내용 또는 검색 결과...",
-  "elapsed_seconds": 2.5
+  "success": true,
+  "message": "regeneration started (task_id: xyz789-task-id)",
+  "task_id": "xyz789-task-id"
 }
+```
+
+**처리 과정**:
+1. Celery 태스크로 백그라운드에서 재생성 작업 시작
+2. 즉시 task_id를 반환하여 클라이언트가 작업 상태를 추적할 수 있도록 함
+3. `/api/jobs/status/{task_id}`로 작업 진행 상황 및 결과 확인
+
+**작업 상태 확인**:
+```bash
+# 반환된 task_id로 작업 상태 조회
+GET /api/jobs/status/xyz789-task-id
 ```
 
 ---
@@ -722,6 +733,252 @@ docker-compose down
 - 서버 재시작 시에도 작업 유지
 - 실시간 작업 상태 조회
 - 작업 취소 및 재시도 기능
+
+---
+
+## 프론트엔드 개발 가이드
+
+### Celery 비동기 작업 처리 방법
+
+프론트엔드에서 Celery 기반 비동기 작업을 처리하는 방법을 안내합니다.
+
+---
+
+#### 1. 보고서 재생성 (`/api/reports/regenerate`)
+
+**Step 1: 재생성 작업 시작**
+
+**Endpoint**: `POST /api/reports/regenerate`
+
+**Request Body**:
+```json
+{
+  "classification": "자세히",
+  "contents": "원본 보고서 내용..."
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "regeneration started (task_id: xyz789-task-id)",
+  "task_id": "xyz789-task-id"
+}
+```
+
+**Step 2: 작업 상태 조회 (폴링)**
+
+**Endpoint**: `GET /api/jobs/status/{task_id}`
+
+**Response (진행 중)**:
+```json
+{
+  "task_id": "xyz789-task-id",
+  "status": "PROGRESS",
+  "result": null,
+  "error": null,
+  "meta": {
+    "status": "재생성 중..."
+  }
+}
+```
+
+**Response (완료)**:
+```json
+{
+  "task_id": "xyz789-task-id",
+  "status": "SUCCESS",
+  "result": {
+    "result": "success",
+    "contents": "재생성된 보고서 내용...",
+    "elapsed_seconds": 3.5
+  },
+  "error": null,
+  "meta": {
+    "status": "작업이 완료되었습니다.",
+    "success": true
+  }
+}
+```
+
+**Response (실패)**:
+```json
+{
+  "task_id": "xyz789-task-id",
+  "status": "FAILURE",
+  "result": null,
+  "error": "오류 메시지",
+  "meta": {
+    "status": "작업이 실패했습니다."
+  }
+}
+```
+
+**처리 플로우**:
+1. `/api/reports/regenerate`로 POST 요청하여 `task_id` 받기
+2. 5초마다 `/api/jobs/status/{task_id}`로 GET 요청하여 상태 확인
+3. `status`가 `SUCCESS`이면 `result.contents`에서 결과 추출
+4. `status`가 `FAILURE`이면 `error` 메시지 표시
+5. `status`가 `PENDING`, `STARTED`, `PROGRESS`이면 계속 폴링
+
+---
+
+#### 2. 보고서 전체 생성 (`/api/reports/generate`)
+
+**Step 1: 생성 작업 시작**
+
+**Endpoint**: `POST /api/reports/generate`
+
+**Request Body**:
+```json
+{
+  "business_idea": "AI 기반 헬스케어 솔루션",
+  "core_value": "개인 맞춤형 건강 관리",
+  "file_name": "강소기업1.pdf",
+  "report_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "generation started (task_id: abc123-task-id)",
+  "report_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Step 2: 작업 상태 조회 (폴링)**
+
+**Endpoint**: `GET /api/jobs/status/abc123-task-id`
+
+**Response (진행 중)**:
+```json
+{
+  "task_id": "abc123-task-id",
+  "status": "PROGRESS",
+  "result": null,
+  "error": null,
+  "meta": {
+    "status": "보고서 생성 중...",
+    "report_id": "550e8400-e29b-41d4-a716-446655440000",
+    "current": 50,
+    "total": 100
+  }
+}
+```
+
+**Response (완료)**:
+```json
+{
+  "task_id": "abc123-task-id",
+  "status": "SUCCESS",
+  "result": {
+    "success": true,
+    "message": "보고서 생성 완료",
+    "report_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "error": null,
+  "meta": {
+    "status": "작업이 완료되었습니다.",
+    "success": true
+  }
+}
+```
+
+**처리 플로우**:
+1. `/api/reports/generate`로 POST 요청하여 `task_id` 받기
+2. 5초마다 `/api/jobs/status/{task_id}`로 상태 확인
+3. `status`가 `SUCCESS`이면 Supabase `report_create` 테이블에서 생성된 보고서 조회
+4. `meta.current`와 `meta.total`로 진행률 표시 가능
+
+---
+
+#### 3. 보고서 임베딩 처리 (`/api/reports/embed`)
+
+**Step 1: 임베딩 작업 시작**
+
+**Endpoint**: `POST /api/reports/embed`
+
+**Request Body**:
+```json
+{
+  "file_name": "강소기업1.pdf",
+  "embed_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "message": "embedding started (task_id: def456-task-id)",
+  "embed_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Step 2: 작업 상태 조회 (폴링)**
+
+**Endpoint**: `GET /api/jobs/status/def456-task-id`
+
+**Response (완료)**:
+```json
+{
+  "task_id": "def456-task-id",
+  "status": "SUCCESS",
+  "result": {
+    "success": true,
+    "message": "임베딩 완료",
+    "embed_id": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "error": null,
+  "meta": {
+    "status": "작업이 완료되었습니다.",
+    "success": true
+  }
+}
+```
+
+**처리 플로우**:
+1. `/api/reports/embed`로 POST 요청하여 `task_id` 받기
+2. 5초마다 `/api/jobs/status/{task_id}`로 상태 확인
+3. `status`가 `SUCCESS`이면 Supabase `report_embed` 테이블에서 `is_completed` 확인
+
+---
+
+#### 4. 작업 상태 종류
+
+| 상태 | 설명 | 다음 액션 |
+|------|------|----------|
+| `PENDING` | 작업이 대기 중 | 계속 폴링 (5초 후 재시도) |
+| `STARTED` | 작업이 시작됨 | 계속 폴링 (5초 후 재시도) |
+| `PROGRESS` | 작업이 진행 중 | 계속 폴링, `meta` 필드에서 진행 상황 확인 가능 |
+| `SUCCESS` | 작업이 완료됨 | `result` 필드에서 최종 결과 추출 |
+| `FAILURE` | 작업이 실패함 | `error` 필드에서 오류 메시지 확인 |
+| `RETRY` | 작업이 재시도 중 | 계속 폴링 (5초 후 재시도) |
+
+---
+
+#### 5. 권장 구현 방법
+
+**폴링 설정**:
+- **폴링 간격**: 5초 (서버 부하와 UX 균형)
+- **최대 시도 횟수**: 60회 (총 5분)
+- **타임아웃**: 작업 유형에 따라 3-10분 설정
+
+**에러 처리**:
+- 네트워크 오류 시 재시도 로직 구현
+- `FAILURE` 상태 시 사용자에게 명확한 오류 메시지 표시
+
+**UI 피드백**:
+- 로딩 스피너 또는 프로그레스 바 표시
+- `PROGRESS` 상태의 `meta` 필드를 활용하여 진행률 표시
+- 예상 소요 시간 안내
+
+**작업 취소**:
+- 필요시 `DELETE /api/jobs/cancel/{task_id}` 호출
+- 단, 이미 시작된 작업은 즉시 중단되지 않을 수 있음
 
 ---
 

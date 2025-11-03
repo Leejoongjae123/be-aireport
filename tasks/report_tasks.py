@@ -7,8 +7,10 @@ from celery_config import celery_app
 from services.report import (
     GenerateReportRequest,
     EmbedReportRequest,
+    RegenerateRequest,
     process_report_generation,
-    process_embed_report
+    process_embed_report,
+    process_report_regenerate
 )
 import traceback
 
@@ -42,7 +44,7 @@ class CallbackTask(Task):
     max_retries=3,
     default_retry_delay=60
 )
-def generate_report_task(self, business_idea: str, core_value: str, file_name: str, report_id: str):
+def generate_report_task(self, business_idea: str, core_value: str, file_name: str, report_id: str, target_investment: str = None):
     """
     전체 사업계획서 생성 태스크
     
@@ -52,6 +54,7 @@ def generate_report_task(self, business_idea: str, core_value: str, file_name: s
         core_value: 핵심 가치
         file_name: 참고 PDF 파일명
         report_id: Supabase report_create 테이블의 UUID
+        target_investment: 목표 투자금액 (예: 5억원, 10억원)
         
     Returns:
         dict: 생성 결과
@@ -80,7 +83,8 @@ def generate_report_task(self, business_idea: str, core_value: str, file_name: s
             business_idea=business_idea,
             core_value=core_value,
             file_name=file_name,
-            report_id=report_id
+            report_id=report_id,
+            target_investment=target_investment
         )
         
         # 보고서 생성 실행
@@ -228,5 +232,91 @@ def embed_report_task(self, file_name: str, embed_id: str):
                 "message": f"최대 재시도 횟수 초과: {str(exc)}",
                 "embed_id": embed_id,
                 "file_name": file_name,
+                "task_id": self.request.id
+            }
+
+
+@celery_app.task(
+    bind=True,
+    base=CallbackTask,
+    name="tasks.report_tasks.regenerate_report_task",
+    max_retries=3,
+    default_retry_delay=60
+)
+def regenerate_report_task(self, classification: str, subject: str = None, contents: str = None):
+    """
+    보고서 재생성 태스크
+    
+    Args:
+        self: Celery task instance
+        classification: 재생성 분류 (자세히, 간결하게, 윤문, 특허, 뉴스 등)
+        subject: 주제 (특허, 뉴스 등에서 사용)
+        contents: 원본 내용 (자세히, 간결하게, 윤문에서 사용)
+        
+    Returns:
+        dict: 재생성 결과
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"📊 Celery Task 시작: 보고서 재생성")
+        print(f"{'='*60}")
+        print(f"Task ID: {self.request.id}")
+        print(f"Classification: {classification}")
+        print(f"{'='*60}\n")
+        
+        # 작업 상태를 PROGRESS로 업데이트
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "status": "재생성 중...",
+                "classification": classification,
+                "current": 0,
+                "total": 100
+            }
+        )
+        
+        # RegenerateRequest 객체 생성
+        request = RegenerateRequest(
+            classification=classification,
+            subject=subject,
+            contents=contents
+        )
+        
+        # 재생성 처리 실행
+        result = process_report_regenerate(request)
+        
+        print(f"\n{'='*60}")
+        print(f"✅ Celery Task 완료: 보고서 재생성")
+        print(f"{'='*60}")
+        print(f"Task ID: {self.request.id}")
+        print(f"Result: {result['result']}")
+        print(f"{'='*60}\n")
+        
+        return {
+            "success": True,
+            "result": result["result"],
+            "contents": result["contents"],
+            "elapsed_seconds": result["elapsed_seconds"],
+            "task_id": self.request.id
+        }
+        
+    except Exception as exc:
+        print(f"\n{'='*60}")
+        print(f"❌ Celery Task 예외 발생: 보고서 재생성")
+        print(f"{'='*60}")
+        print(f"Task ID: {self.request.id}")
+        print(f"예외: {str(exc)}")
+        print(f"Traceback:\n{traceback.format_exc()}")
+        print(f"{'='*60}\n")
+        
+        # 재시도 로직
+        try:
+            raise self.retry(exc=exc)
+        except self.MaxRetriesExceededError:
+            return {
+                "success": False,
+                "result": "error",
+                "contents": f"최대 재시도 횟수 초과: {str(exc)}",
+                "elapsed_seconds": 0,
                 "task_id": self.request.id
             }

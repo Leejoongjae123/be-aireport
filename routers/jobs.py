@@ -77,8 +77,19 @@ async def get_job_status(task_id: str):
         elif task_result.state == "PROGRESS":
             response.meta = task_result.info
         elif task_result.state == "SUCCESS":
-            response.result = task_result.result
-            response.meta = {"status": "작업이 완료되었습니다."}
+            # 태스크 결과를 그대로 반환
+            result_data = task_result.result
+            response.result = result_data
+            
+            # 결과가 딕셔너리이고 success 키가 있으면 상세 정보 추가
+            if isinstance(result_data, dict):
+                response.meta = {
+                    "status": "작업이 완료되었습니다.",
+                    "success": result_data.get("success", True),
+                    "message": result_data.get("message", ""),
+                }
+            else:
+                response.meta = {"status": "작업이 완료되었습니다."}
         elif task_result.state == "FAILURE":
             response.error = str(task_result.info)
             response.meta = {"status": "작업이 실패했습니다."}

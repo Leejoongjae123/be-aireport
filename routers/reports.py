@@ -18,10 +18,12 @@ from services.report import (
     EmbedReportRequest,
     EmbedReportResponse,
     UploadReportResponse,
+    RegenerateStartResponse,
     generate_background,
     generate_report,
     generate_start,
     report_regenerate,
+    regenerate_start,
     search_reports,
     embed_report_start,
     upload_report
@@ -112,10 +114,15 @@ async def generate_async_endpoint(background_tasks: BackgroundTasks, request: Ge
     return await generate_start(background_tasks, request)
 
 
-@router.post("/regenerate", response_model=RegenerateResponse)
+@router.post("/regenerate", response_model=RegenerateStartResponse)
 async def regenerate_endpoint(request: RegenerateRequest):
     """
-    보고서 재생성 (스타일 변경 및 추가 정보)
+    보고서 재생성 (백그라운드 비동기 처리)
+    
+    **주요 기능:**
+    - 즉시 성공 응답 반환
+    - 백그라운드에서 보고서 재생성
+    - Celery 태스크로 비동기 처리
     
     **지원 분류:**
     - **자세히**: 내용 보강 (글자수 20% 증가)
@@ -132,13 +139,16 @@ async def regenerate_endpoint(request: RegenerateRequest):
     }
     ```
     
+    **작업 상태 조회:**
+    - 반환된 task_id로 `/api/jobs/status/{task_id}` 엔드포인트를 통해 작업 상태 확인 가능
+    
     Args:
         request: 재생성 요청
         
     Returns:
-        재생성된 컨텐츠
+        재생성 시작 확인 메시지 및 task_id
     """
-    return await report_regenerate(request)
+    return await regenerate_start(request)
 
 
 @router.post("/search", response_model=SearchResponse)

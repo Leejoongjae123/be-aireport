@@ -115,6 +115,7 @@ def load_reference_data(json_file: str = "1.1.json", data_folder: Optional[Path]
 class GenerateBackgroundRequest(BaseModel):
     business_idea: str = Field(..., description="사업 아이디어")
     core_value: str = Field(..., description="핵심 가치")
+    target_investment: Optional[str] = Field(None, description="목표 투자금액 (예: 5억원, 10억원)")
     subsection_id: str = Field(default="1.1", description="섹션 ID")
     subsection_name: str = Field(default="추진 배경 및 필요성", description="섹션 이름")
     section_id: str = Field(default="1", description="상위 섹션 ID")
@@ -135,6 +136,7 @@ class GenerateBackgroundResponse(BaseModel):
 class GenerateReportRequest(BaseModel):
     business_idea: str = Field(..., description="사업 아이디어")
     core_value: str = Field(..., description="핵심 가치")
+    target_investment: Optional[str] = Field(None, description="목표 투자금액 (예: 5억원, 10억원)")
     file_name: str = Field(..., description="참고 PDF 파일명 (예: 강소기업1.pdf)")
     report_id: str = Field(..., description="Supabase report_create 테이블의 UUID")
 
@@ -219,7 +221,8 @@ def generate_background_content(
     business_idea: str, 
     core_value: str,
     json_file: str = "1.1.json",
-    data_folder: Optional[Path] = None
+    data_folder: Optional[Path] = None,
+    target_investment: Optional[str] = None
 ) -> str:
     """
     OpenAI Responses API (GPT-5)를 사용하여 사업계획서 컨텐츠를 생성합니다.
@@ -229,6 +232,7 @@ def generate_background_content(
         core_value: 핵심 가치
         json_file: 참고할 JSON 파일명 (기본값: 1.1.json)
         data_folder: 데이터 폴더 경로 (지정되지 않으면 현재 디렉토리에서 검색)
+        target_investment: 목표 투자금액 (예: 5억원, 10억원)
     
     Returns:
         생성된 컨텐츠 텍스트
@@ -251,22 +255,28 @@ def generate_background_content(
     else:
         reference_example = "[참고 예시를 로드할 수 없습니다]"
     
+    # 목표 투자금액 정보 추가
+    investment_info = ""
+    if target_investment:
+        investment_info = f"\n목표 투자금액: {target_investment}"
+    
     user_prompt = f"""다음 사업 아이디어와 핵심 가치를 바탕으로 '{subsection_name}' 전체 내용을 작성해주세요.
 
 사업 아이디어: {business_idea}
-핵심 가치: {core_value}
+핵심 가치: {core_value}{investment_info}
 
 아래는 실제 작성된 사업계획서의 '{subsection_name}' 예시입니다:
 {reference_example}
 
 위의 참고 예시의 작성 스타일, 구조, 형식을 참고하여 작성해주세요:
 - 참고 예시와 유사한 구조로 보고서 작성
-- 가장 상단에 subsection_name값을 적고 h1태그를 써줘
+- 가장 상단에 h1태그로 subsection_name값만 순수하게 작성 (예: <h1>{subsection_name}</h1>). 넘버링(1., 1.1 등)은 절대 포함하지 말 것
 - 내용에서 불필요한 말머리기호는 없애주고, N.소제목(h2태그)으로 작성하고 그 밑에는 -기호로 개행하면서 작성(p태그)해줘
 - 테이블형태로 작성해야되는거는 HTML 테이블 형태 고려해서 작성해줘.
 - 약 1000자 내외 분량의 체계적이고 포괄적인 내용으로 작성
 - HTML형태로 작성하여 개행과 넘버링 체계 유지
 - {subsection_name}에 부합하지 않는 내용은 제거
+{"- 목표 투자금액(" + target_investment + ")을 고려하여 사업 규모, 예산 계획, 투자 계획 등의 내용을 적절히 반영" if target_investment else ""}
 """
     
     client = get_openai_client()
@@ -275,10 +285,15 @@ def generate_background_content(
         return "OpenAI API 키가 설정되지 않았습니다."
     
     try:
+        # 목표 투자금액에 따른 추가 지시사항
+        additional_instructions = ""
+        if target_investment:
+            additional_instructions = f" 목표 투자금액({target_investment})을 고려하여 사업 규모, 예산 배분, 투자 계획의 타당성과 구체성을 강화하세요."
+        
         response = client.responses.create(
             model="gpt-5",
             reasoning={"effort": "medium"},
-            instructions="당신은 정부 R&D 사업계획서 작성 전문가입니다. 기술적이고 전문적인 용어를 사용하며, 설득력 있는 내용을 작성합니다.",
+            instructions=f"당신은 정부 R&D 사업계획서 작성 전문가입니다. 기술적이고 전문적인 용어를 사용하며, 설득력 있는 내용을 작성합니다.{additional_instructions}",
             input=user_prompt
         )
         
@@ -329,7 +344,8 @@ async def generate_background(request: GenerateBackgroundRequest):
     content = generate_background_content(
         business_idea=request.business_idea,
         core_value=request.core_value,
-        json_file=json_file
+        json_file=json_file,
+        target_investment=request.target_investment
     )
     
     elapsed_time = time.time() - start_time
@@ -445,7 +461,8 @@ def process_report_generation(request: GenerateReportRequest) -> GenerateReportR
                 business_idea=request.business_idea,
                 core_value=request.core_value,
                 json_file=json_file.name,
-                data_folder=data_folder
+                data_folder=data_folder,
+                target_investment=request.target_investment
             )
 
             clean_content = remove_html_tags(content)
@@ -529,7 +546,7 @@ async def generate_start(background_tasks: BackgroundTasks, request: GenerateRep
     
     # Celery 태스크 실행
     task = generate_report_task.apply_async(
-        args=[request.business_idea, request.core_value, request.file_name, request.report_id],
+        args=[request.business_idea, request.core_value, request.file_name, request.report_id, request.target_investment],
         queue="report_generation"
     )
     
@@ -540,7 +557,10 @@ async def generate_start(background_tasks: BackgroundTasks, request: GenerateRep
     )
 
 
-async def report_regenerate(request: RegenerateRequest):
+def process_report_regenerate(request: RegenerateRequest) -> dict:
+    """
+    보고서 재생성 로직. 동기 함수로 구현하여 재사용합니다.
+    """
     start_time = time.time()
     
     print(f"\n{'='*60}")
@@ -556,7 +576,7 @@ async def report_regenerate(request: RegenerateRequest):
         elapsed_seconds = time.time() - start_time
         message = "OPENAI_API_KEY 환경변수가 설정되지 않았습니다."
         print(f"❌ {message}")
-        return RegenerateResponse(result="error", contents=message, elapsed_seconds=elapsed_seconds)
+        return {"result": "error", "contents": message, "elapsed_seconds": elapsed_seconds}
 
     try:
         output_text = ""
@@ -565,11 +585,11 @@ async def report_regenerate(request: RegenerateRequest):
             if not request.contents:
                 elapsed_seconds = time.time() - start_time
                 print(f"❌ contents가 없습니다.")
-                return RegenerateResponse(
-                    result="error",
-                    contents="요청에 contents가 없습니다.",
-                    elapsed_seconds=elapsed_seconds
-                )
+                return {
+                    "result": "error",
+                    "contents": "요청에 contents가 없습니다.",
+                    "elapsed_seconds": elapsed_seconds
+                }
 
             style_prompts = {
                 "자세히": "주어진 원문의 문단과 목록 구조를 유지하며 세부 설명을 보강해 더 자세하게 작성하면서 글자수를 지금보다 20% 늘려줘",
@@ -599,20 +619,20 @@ async def report_regenerate(request: RegenerateRequest):
 
             elapsed_seconds = time.time() - start_time
             print(f"✅ 재생성 완료 (소요시간: {elapsed_seconds:.2f}초)")
-            return RegenerateResponse(
-                result="success",
-                contents=output_text,
-                elapsed_seconds=elapsed_seconds
-            )
+            return {
+                "result": "success",
+                "contents": output_text,
+                "elapsed_seconds": elapsed_seconds
+            }
 
         if request.classification == "특허":
             if not request.subject:
                 elapsed_seconds = time.time() - start_time
-                return RegenerateResponse(
-                    result="error",
-                    contents="요청에 subject가 없습니다.",
-                    elapsed_seconds=elapsed_seconds
-                )
+                return {
+                    "result": "error",
+                    "contents": "요청에 subject가 없습니다.",
+                    "elapsed_seconds": elapsed_seconds
+                }
             query = f"한국의 {request.subject} 관련 특허 웹 검색조건으로 2020년 이후 3건을 발명명, 출원인 알려줘"
 
             response = client.responses.create(
@@ -634,11 +654,11 @@ async def report_regenerate(request: RegenerateRequest):
         elif request.classification == "뉴스":
             if not request.subject:
                 elapsed_seconds = time.time() - start_time
-                return RegenerateResponse(
-                    result="error",
-                    contents="요청에 subject가 없습니다.",
-                    elapsed_seconds=elapsed_seconds
-                )
+                return {
+                    "result": "error",
+                    "contents": "요청에 subject가 없습니다.",
+                    "elapsed_seconds": elapsed_seconds
+                }
             query = f"{request.subject} 관련 최신 한국 뉴스 3건의 제목, 출처, 날짜를 알려줘"
 
             response = client.responses.create(
@@ -661,11 +681,11 @@ async def report_regenerate(request: RegenerateRequest):
         else:
             if not request.subject:
                 elapsed_seconds = time.time() - start_time
-                return RegenerateResponse(
-                    result="error",
-                    contents="요청에 subject가 없습니다.",
-                    elapsed_seconds=elapsed_seconds
-                )
+                return {
+                    "result": "error",
+                    "contents": "요청에 subject가 없습니다.",
+                    "elapsed_seconds": elapsed_seconds
+                }
             query = f"{request.subject}에 대한 한국의 {request.classification} 3건의 제목, 작성자, 출처를 알려줘"
 
             response = client.chat.completions.create(
@@ -681,20 +701,20 @@ async def report_regenerate(request: RegenerateRequest):
 
         if not output_text:
             elapsed_seconds = time.time() - start_time
-            return RegenerateResponse(
-                result="error",
-                contents="검색 결과를 가져오는 데 실패했습니다.",
-                elapsed_seconds=elapsed_seconds
-            )
+            return {
+                "result": "error",
+                "contents": "검색 결과를 가져오는 데 실패했습니다.",
+                "elapsed_seconds": elapsed_seconds
+            }
 
         html_content = parse_search_results(output_text)
         elapsed_seconds = time.time() - start_time
 
-        return RegenerateResponse(
-            result="success",
-            contents=html_content,
-            elapsed_seconds=elapsed_seconds
-        )
+        return {
+            "result": "success",
+            "contents": html_content,
+            "elapsed_seconds": elapsed_seconds
+        }
 
     except Exception as e:
         elapsed_seconds = time.time() - start_time
@@ -703,11 +723,48 @@ async def report_regenerate(request: RegenerateRequest):
         print(f"에러 타입: {type(e).__name__}")
         import traceback
         print(f"상세 스택:\n{traceback.format_exc()}")
-        return RegenerateResponse(
-            result="error",
-            contents=error_msg,
-            elapsed_seconds=elapsed_seconds
-        )
+        return {
+            "result": "error",
+            "contents": error_msg,
+            "elapsed_seconds": elapsed_seconds
+        }
+
+
+async def report_regenerate(request: RegenerateRequest):
+    """
+    동기 처리 엔드포인트 (기존 동작 유지)
+    """
+    result = process_report_regenerate(request)
+    return RegenerateResponse(
+        result=result["result"],
+        contents=result["contents"],
+        elapsed_seconds=result["elapsed_seconds"]
+    )
+
+
+class RegenerateStartResponse(BaseModel):
+    success: bool
+    message: str
+    task_id: str
+
+
+async def regenerate_start(request: RegenerateRequest):
+    """
+    즉시 성공을 반환하고, 보고서 재생성은 Celery 태스크로 실행합니다.
+    """
+    from tasks.report_tasks import regenerate_report_task
+    
+    # Celery 태스크 실행
+    task = regenerate_report_task.apply_async(
+        args=[request.classification, request.subject, request.contents],
+        queue="report_generation"
+    )
+    
+    return RegenerateStartResponse(
+        success=True, 
+        message=f"regeneration started (task_id: {task.id})", 
+        task_id=task.id
+    )
 
 
 def get_s3_client():
