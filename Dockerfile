@@ -45,4 +45,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=5 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=10)" || exit 1
 
 # 애플리케이션 실행 (타임아웃 설정 추가)
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info", "--timeout-keep-alive", "120"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info", "--timeout-keep-alive", "300", "--timeout-graceful-shutdown", "30"]

@@ -119,8 +119,8 @@ docker run -d \
     --name fastapi-app \
     --network fastapi-network \
     -p 8000:8000 \
-    -v ~/data:/app/data \
-    -v ~/logs:/app/logs \
+    -v /home/ubuntu/data:/app/data \
+    -v /home/ubuntu/logs:/app/logs \
     -e OPENAI_API_KEY="\${OPENAI_API_KEY}" \
     -e SUPABASE_URL="\${SUPABASE_URL}" \
     -e SUPABASE_KEY="\${SUPABASE_KEY}" \
@@ -137,8 +137,8 @@ echo "Celery Worker 컨테이너 시작..."
 docker run -d \
     --name celery-worker \
     --network fastapi-network \
-    -v ~/data:/app/data \
-    -v ~/logs:/app/logs \
+    -v /home/ubuntu/data:/app/data \
+    -v /home/ubuntu/logs:/app/logs \
     -e OPENAI_API_KEY="\${OPENAI_API_KEY}" \
     -e SUPABASE_URL="\${SUPABASE_URL}" \
     -e SUPABASE_KEY="\${SUPABASE_KEY}" \

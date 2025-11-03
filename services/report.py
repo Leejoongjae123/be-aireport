@@ -17,7 +17,7 @@ def get_openai_client():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
-    return OpenAI(api_key=api_key)
+    return OpenAI(api_key=api_key, timeout=300.0, max_retries=2)
 
 
 def get_supabase_client() -> Optional[Client]:
@@ -542,10 +542,20 @@ async def generate_start(background_tasks: BackgroundTasks, request: GenerateRep
 
 async def report_regenerate(request: RegenerateRequest):
     start_time = time.time()
+    
+    print(f"\n{'='*60}")
+    print(f"📝 보고서 재생성 요청")
+    print(f"{'='*60}")
+    print(f"분류: {request.classification}")
+    print(f"주제: {request.subject}")
+    print(f"내용 길이: {len(request.contents) if request.contents else 0}자")
+    print(f"{'='*60}\n")
+    
     client = get_openai_client()
     if not client:
         elapsed_seconds = time.time() - start_time
         message = "OPENAI_API_KEY 환경변수가 설정되지 않았습니다."
+        print(f"❌ {message}")
         return RegenerateResponse(result="error", contents=message, elapsed_seconds=elapsed_seconds)
 
     try:
@@ -554,6 +564,7 @@ async def report_regenerate(request: RegenerateRequest):
         if request.classification in {"자세히", "간결하게", "윤문"}:
             if not request.contents:
                 elapsed_seconds = time.time() - start_time
+                print(f"❌ contents가 없습니다.")
                 return RegenerateResponse(
                     result="error",
                     contents="요청에 contents가 없습니다.",
@@ -575,16 +586,19 @@ async def report_regenerate(request: RegenerateRequest):
                 f"원문:\n{request.contents}"
             )
 
+            print(f"🔄 OpenAI API 호출 시작 (model: gpt-5)...")
             response = client.responses.create(
                 model="gpt-5",
                 input=prompt,
             )
+            print(f"✅ OpenAI API 응답 완료")
 
             output_text = getattr(response, "output_text", "")
             if not output_text:
                 output_text = request.contents or ""
 
             elapsed_seconds = time.time() - start_time
+            print(f"✅ 재생성 완료 (소요시간: {elapsed_seconds:.2f}초)")
             return RegenerateResponse(
                 result="success",
                 contents=output_text,
@@ -684,9 +698,14 @@ async def report_regenerate(request: RegenerateRequest):
 
     except Exception as e:
         elapsed_seconds = time.time() - start_time
+        error_msg = f"오류가 발생했습니다: {str(e)}"
+        print(f"❌ {error_msg}")
+        print(f"에러 타입: {type(e).__name__}")
+        import traceback
+        print(f"상세 스택:\n{traceback.format_exc()}")
         return RegenerateResponse(
             result="error",
-            contents=f"오류가 발생했습니다: {str(e)}",
+            contents=error_msg,
             elapsed_seconds=elapsed_seconds
         )
 
