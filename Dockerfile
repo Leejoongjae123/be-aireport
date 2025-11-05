@@ -19,12 +19,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# unstructured[pdf]를 위한 런타임 의존성만 설치
+# unstructured[pdf]와 OpenCV를 위한 런타임 의존성 설치
 RUN apt-get update && apt-get install -y \
     poppler-utils \
     tesseract-ocr \
     libtesseract-dev \
     libmagic1 \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -36,6 +41,13 @@ ENV PATH=/root/.local/bin:$PATH
 
 # 애플리케이션 코드 복사
 COPY . .
+
+# embedding.py가 확실히 포함되었는지 확인
+RUN ls -la /app/ && \
+    if [ ! -f /app/embedding.py ]; then \
+        echo "ERROR: embedding.py not found!"; \
+        exit 1; \
+    fi
 
 # 포트 노출
 EXPOSE 8000

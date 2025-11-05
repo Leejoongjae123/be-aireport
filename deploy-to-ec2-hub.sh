@@ -70,7 +70,9 @@ set -e
 
 # 환경 변수 로드
 if [ -f ~/.env ]; then
-    export \$(cat ~/.env | grep -v '^#' | xargs)
+    set -a
+    source ~/.env
+    set +a
 fi
 
 # 기존 컨테이너 중지 및 제거
@@ -146,6 +148,7 @@ docker run -d \
     -e NEXT_PUBLIC_HF_TOKEN="\${NEXT_PUBLIC_HF_TOKEN}" \
     -e NEXT_PUBLIC_S3_ACCESS_KEY="\${NEXT_PUBLIC_S3_ACCESS_KEY}" \
     -e NEXT_PUBLIC_S3_SECRET_KEY="\${NEXT_PUBLIC_S3_SECRET_KEY}" \
+    -e AWS_S3_BUCKET_NAME="\${AWS_S3_BUCKET_NAME}" \
     -e REDIS_URL=redis://redis:6379/0 \
     --restart unless-stopped \
     $DOCKER_IMAGE \

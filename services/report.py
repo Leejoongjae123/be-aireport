@@ -962,15 +962,52 @@ def process_embed_report(request: EmbedReportRequest):
         
         # 5. 임베딩 처리
         print(f"\n🔄 멀티모달 임베딩 처리 시작...")
-        from embedding import process_single_folder_by_name
+        print(f"   폴더명: {base_name}")
+        print(f"   폴더 경로: {folder_path}")
+        print(f"   PDF 파일 경로: {local_file_path}")
+        print(f"   PDF 파일 존재 여부: {local_file_path.exists()}")
         
-        result = process_single_folder_by_name(base_name)
+        try:
+            # services 폴더 내의 embedding 모듈 임포트
+            from services.embedding import process_single_folder_by_name
+            print(f"   ✅ embedding 모듈 임포트 성공")
+            
+            result = process_single_folder_by_name(base_name)
+            print(f"📊 임베딩 처리 결과: {result}")
+        except ImportError as import_error:
+            print(f"❌ embedding 모듈 임포트 실패: {str(import_error)}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"embedding 모듈 임포트 실패: {str(import_error)}")
+        except Exception as embed_error:
+            print(f"❌ 임베딩 처리 중 예외 발생: {str(embed_error)}")
+            import traceback
+            traceback.print_exc()
+            raise Exception(f"임베딩 처리 중 예외 발생: {str(embed_error)}")
         
         if not result.get("success"):
             raise Exception(f"임베딩 처리 실패: {result.get('error', 'Unknown error')}")
         
+        # 6. figures와 output 폴더가 실제로 생성되었는지 확인
+        figures_dir = folder_path / "figures"
+        output_dir = folder_path / "output"
+        
+        if not figures_dir.exists():
+            raise Exception(f"figures 폴더가 생성되지 않았습니다: {figures_dir}")
+        
+        if not output_dir.exists():
+            raise Exception(f"output 폴더가 생성되지 않았습니다: {output_dir}")
+        
+        # output 폴더에 JSON 파일이 있는지 확인
+        json_files = list(output_dir.glob("*.json"))
+        if not json_files:
+            raise Exception(f"output 폴더에 JSON 파일이 생성되지 않았습니다: {output_dir}")
+        
         print(f"✅ 임베딩 처리 완료")
         print(f"   처리된 subsection: {result.get('processed', 0)}개")
+        print(f"   생성된 JSON 파일: {len(json_files)}개")
+        print(f"   figures 폴더: {figures_dir}")
+        print(f"   output 폴더: {output_dir}")
         
         # 6. Supabase 업데이트
         print(f"\n💾 Supabase 업데이트 중...")
