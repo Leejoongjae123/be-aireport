@@ -4,69 +4,45 @@ __pycache__/
 *$py.class
 *.so
 .Python
-env/
 venv/
+env/
 ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-data/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# 환경 변수 파일
-.env
-.env.local
-.env.*.local
+# Node
+node_modules/
+npm-debug.log
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
+.claude/
 
 # Git
 .git/
 .gitignore
 
-# Docker
-Dockerfile
-.dockerignore
-docker-compose.yml
+# Data
+data/
+logs/
+temp_redis/
 
-# 배포 스크립트
-*.sh
-ubuntu.pem
-
-
-# 로그
-*.log
-
-# 테스트
-.pytest_cache/
-.coverage
-htmlcov/
+# Environment
+.env
+.env.local
 
 # OS
 .DS_Store
 Thumbs.db
 
-# 문서
-README.md
-docs/
-*.md
-data
+# Test
+test_*.py
+*_test.py
 
-# data 폴더는 볼륨 마운트로 처리하므로 이미지에 포함하지 않음
-# (docker-compose.yml에서 ./data:/app/data로 마운트됨)
+# Misc
+*.md
+!README.md
+ubuntu.pem
+*.pem
+*.key
