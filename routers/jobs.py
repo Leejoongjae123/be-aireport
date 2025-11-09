@@ -9,6 +9,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from celery.result import AsyncResult
 from celery_config import celery_app
+import redis
+import json
+import os
 
 
 router = APIRouter(
@@ -32,6 +35,7 @@ class JobListResponse(BaseModel):
     active: list = Field(default_factory=list, description="실행 중인 작업 목록")
     scheduled: list = Field(default_factory=list, description="예약된 작업 목록")
     reserved: list = Field(default_factory=list, description="예약된 작업 목록")
+    queued: list = Field(default_factory=list, description="큐에 대기 중인 작업 목록")
 
 
 @router.get("/status/{task_id}", response_model=JobStatusResponse)
@@ -167,10 +171,39 @@ async def list_jobs():
                     "kwargs": task.get("kwargs"),
                 })
         
+        # Redis에서 대기 중인 작업 조회
+        queued_list = []
+        try:
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            redis_client = redis.from_url(redis_url)
+            
+            # 각 큐에서 대기 중인 작업 조회
+            for queue_name in ["celery", "report_generation", "report_embedding"]:
+                queue_length = redis_client.llen(queue_name)
+                if queue_length > 0:
+                    # 큐의 모든 작업 가져오기
+                    tasks = redis_client.lrange(queue_name, 0, -1)
+                    for task_data in tasks:
+                        try:
+                            task_json = json.loads(task_data)
+                            headers = task_json.get("headers", {})
+                            queued_list.append({
+                                "queue": queue_name,
+                                "task_id": headers.get("id"),
+                                "name": headers.get("task"),
+                                "args": headers.get("argsrepr"),
+                                "kwargs": headers.get("kwargsrepr"),
+                            })
+                        except:
+                            pass
+        except Exception as e:
+            print(f"Redis 큐 조회 중 오류: {e}")
+        
         return JobListResponse(
             active=active_list,
             scheduled=scheduled_list,
-            reserved=reserved_list
+            reserved=reserved_list,
+            queued=queued_list
         )
         
     except Exception as e:

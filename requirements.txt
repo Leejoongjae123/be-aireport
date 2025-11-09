@@ -1,19 +1,51 @@
+# 로컬 실행용 의존성 패키지 (Docker Compose 대체)
+# onnxruntime 호환성 문제 해결됨
+
+# 기본 웹 프레임워크
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 python-dotenv==1.0.1
 pydantic==2.9.2
+
+# AI/ML 서비스
 openai>=1.60.0
 supabase==2.9.0
+
+# LangChain
 langchain-openai==0.2.2
-langchain-core==0.3.10
+langchain-core>=0.3.12
+langchain-community==0.3.3
+langchain==0.3.7
+langchain-text-splitters==0.3.2
+
+# 데이터베이스 및 벡터 저장소
+chromadb>=0.4.22
+redis==5.0.1
+
+# 데이터 처리
 numpy==1.26.4
+pandas>=2.0.0
 scikit-learn==1.5.2
 python-multipart==0.0.12
+
+# 클라우드 서비스
 boto3==1.35.0
-unstructured[pdf]==0.10.30
-pillow==10.1.0
-celery==5.3.4
-redis==5.0.1
+
+# HTTP 클라이언트
 httpx==0.27.0
+
+# 이미지 및 PDF 처리
+pillow==10.1.0
+pdf2image>=1.16.3
+pytesseract>=0.3.10
+PyMuPDF>=1.23.0
+
+# 비동기 작업
+celery==5.3.4
+gevent==24.2.1
+
+# 시각화 (선택)
 matplotlib==3.8.2
-opencv-python-headless==4.8.1.78
+
+# OpenCV (호환성 버전)
+opencv-python>=4.8.0,!=4.7.0.68

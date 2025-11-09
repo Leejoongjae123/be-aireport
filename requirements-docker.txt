@@ -1,0 +1,51 @@
+# Docker용 의존성 패키지 (호환성 최적화)
+# 단계적 설치로 onnxruntime 충돌 방지
+
+# 1단계: 기본 패키지
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-dotenv==1.0.1
+pydantic==2.9.2
+openai>=1.60.0
+supabase==2.9.0
+httpx==0.27.0
+python-multipart==0.0.12
+
+# 2단계: 데이터 처리
+numpy==1.26.4
+pandas>=2.0.0
+scikit-learn==1.5.2
+pillow==10.1.0
+pdf2image>=1.16.3
+pytesseract>=0.3.10
+
+# 3단계: PyTorch (CPU 버전)
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# 4단계: ONNX Runtime (호환성 해결)
+onnx>=1.12.0
+onnxruntime>=1.15.0
+
+# 5단계: ML 모델
+transformers>=4.21.0
+timm>=0.6.12
+
+# 6단계: LangChain
+langchain-core>=0.3.12
+langchain-community==0.3.3
+langchain==0.3.7
+langchain-openai==0.2.2
+langchain-text-splitters==0.3.2
+
+# 7단계: 벡터 저장소 및 클라우드
+chromadb>=0.4.22
+boto3==1.35.0
+redis==5.0.1
+
+# 8단계: 비동기 작업
+celery==5.3.4
+
+# 9단계: Unstructured (마지막에 설치)
+unstructured[local-inference]==0.10.30

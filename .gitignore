@@ -73,6 +73,9 @@ Thumbs.db
 *.bak
 *.swp
 *~
+nul
+temp_redis/
+.claude/
 
 # Jupyter Notebook
 .ipynb_checkpoints

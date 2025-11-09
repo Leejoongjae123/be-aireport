@@ -1,24 +1,9 @@
 version: '3.8'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: multimodal-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: multimodal-app
+    image: ${DOCKER_IMAGE:-multimodal-rag:local}
+    container_name: local-multimodal-app
     ports:
       - "8000:8000"
     env_file:
@@ -39,13 +24,24 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: local-multimodal-redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
   celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: multimodal-celery-worker
-    command: sh -c "sleep 5 && celery -A celery_worker worker --loglevel=info -P gevent --concurrency=3 -Q report_generation,report_embedding,celery -n worker@%h"
+    image: ${DOCKER_IMAGE:-multimodal-rag:local}
+    container_name: local-multimodal-celery-worker
+    command: ["celery", "-A", "celery_worker", "worker", "--loglevel=info", "-P", "gevent", "--concurrency=3", "-Q", "report_generation,report_embedding,celery", "-n", "worker@%h"]
     env_file:
       - .env
     environment:
@@ -57,7 +53,6 @@ services:
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - REDIS_URL=redis://redis:6379/0
-      - CELERY_POOL=gevent
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

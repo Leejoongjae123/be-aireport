@@ -71,14 +71,14 @@ def parse_search_results(text_response: str) -> str:
 
 def load_reference_data(json_file: str = "1.1.json", data_folder: Optional[Path] = None) -> tuple[str, str, str]:
     """
-    참고용 JSON 파일에서 메타데이터와 contexts 중 rank 1을 로드합니다.
+    참고용 JSON 파일에서 메타데이터와 모든 contexts를 로드합니다.
     
     Args:
         json_file: 참고할 JSON 파일명 (기본값: 1.1.json)
         data_folder: 데이터 폴더 경로 (지정되지 않으면 현재 디렉토리에서 검색)
     
     Returns:
-        tuple: (subsection_id, subsection_name, rank 1 content)
+        tuple: (subsection_id, subsection_name, 모든 contexts 결합 content)
                로드 실패 시 ("", "", "")
     """
     try:
@@ -99,11 +99,14 @@ def load_reference_data(json_file: str = "1.1.json", data_folder: Optional[Path]
             subsection_name = data.get('subsection_name', '')
             contexts = data.get('contexts', [])
             
-            content = ""
-            for ctx in contexts:
-                if ctx.get('rank') == 1:
-                    content = ctx.get('content', '')
-                    break
+            # 모든 contexts를 rank 순서대로 결합
+            content_parts = []
+            for ctx in sorted(contexts, key=lambda x: x.get('rank', 0)):
+                ctx_content = ctx.get('content', '').strip()
+                if ctx_content:
+                    content_parts.append(f"[참고자료 {ctx.get('rank', 0)}]\n{ctx_content}")
+            
+            content = "\n\n".join(content_parts)
             
             return (subsection_id, subsection_name, content)
     except Exception as e:
@@ -769,9 +772,9 @@ async def regenerate_start(request: RegenerateRequest):
 
 def get_s3_client():
     """S3 클라이언트를 반환합니다."""
-    aws_access_key = os.getenv("NEXT_PUBLIC_S3_ACCESS_KEY")
-    aws_secret_key = os.getenv("NEXT_PUBLIC_S3_SECRET_KEY")
-    aws_region = os.getenv("NEXT_PUBLIC_S3_REGION", "ap-northeast-2")
+    aws_access_key = os.getenv("NEXT_PUBLIC_S3_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+    aws_secret_key = os.getenv("NEXT_PUBLIC_S3_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+    aws_region = os.getenv("NEXT_PUBLIC_S3_REGION") or os.getenv("AWS_REGION", "ap-northeast-2")
     
     if not aws_access_key or not aws_secret_key:
         print("AWS 자격증명이 설정되지 않았습니다.")
@@ -805,7 +808,7 @@ def download_from_s3(file_name: str, local_path: Path) -> bool:
     if not s3_client:
         return False
     
-    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME")
     if not bucket_name:
         print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
         return False
@@ -839,7 +842,7 @@ def upload_to_s3(file_name: str, local_path: Path) -> tuple[bool, Optional[str]]
     if not s3_client:
         return False, None
     
-    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME")
     if not bucket_name:
         print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
         return False, None
@@ -878,7 +881,7 @@ async def upload_file_to_s3(file: UploadFile) -> tuple[bool, Optional[str], str,
     if not s3_client:
         return False, None, file.filename, "S3 클라이언트 초기화 실패"
     
-    bucket_name = os.getenv("AWS_S3_BUCKET_NAME")
+    bucket_name = os.getenv("AWS_S3_BUCKET_NAME") or os.getenv("S3_BUCKET_NAME")
     if not bucket_name:
         print("AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다.")
         return False, None, file.filename, "AWS_S3_BUCKET_NAME 환경변수가 설정되지 않았습니다."
@@ -969,11 +972,50 @@ def process_embed_report(request: EmbedReportRequest):
         
         try:
             # services 폴더 내의 embedding 모듈 임포트
-            from services.embedding import process_single_folder_by_name
+            from services.embedding import (
+                process_single_folder_by_name,
+                load_procedure_json,
+                extract_all_subsections,
+                retrieve_for_subsections
+            )
             print(f"   ✅ embedding 모듈 임포트 성공")
             
+            # 1. 멀티모달 임베딩 처리
             result = process_single_folder_by_name(base_name)
             print(f"📊 임베딩 처리 결과: {result}")
+            
+            if not result.get("success"):
+                raise Exception(f"임베딩 처리 실패: {result.get('error', 'Unknown error')}")
+            
+            print(f"✅ 임베딩 처리 완료")
+            print(f"   처리된 텍스트: {result.get('text_count', 0)}개")
+            print(f"   처리된 이미지: {result.get('image_count', 0)}개")
+            print(f"   컬렉션 이름: {result.get('collection_name', 'N/A')}")
+            
+            # 2. procedure.json 기반 retrieval 수행
+            print(f"\n📋 procedure.json 기반 retrieval 수행 중...")
+            try:
+                procedure_data = load_procedure_json("./procedure.json")
+                subsections = extract_all_subsections(procedure_data)
+                
+                retriever = result.get("retriever")
+                output_dir = os.path.join(folder_path, "output")
+                
+                summary = retrieve_for_subsections(
+                    retriever, 
+                    subsections, 
+                    output_dir=output_dir,
+                    top_k=3
+                )
+                
+                print(f"✅ Retrieval 완료: {summary['processed']}개 subsection 처리")
+                
+            except Exception as retrieval_error:
+                print(f"⚠️  Retrieval 처리 중 오류: {str(retrieval_error)}")
+                import traceback
+                traceback.print_exc()
+                # Retrieval 실패는 전체 프로세스를 중단하지 않음
+            
         except ImportError as import_error:
             print(f"❌ embedding 모듈 임포트 실패: {str(import_error)}")
             import traceback
@@ -984,30 +1026,6 @@ def process_embed_report(request: EmbedReportRequest):
             import traceback
             traceback.print_exc()
             raise Exception(f"임베딩 처리 중 예외 발생: {str(embed_error)}")
-        
-        if not result.get("success"):
-            raise Exception(f"임베딩 처리 실패: {result.get('error', 'Unknown error')}")
-        
-        # 6. figures와 output 폴더가 실제로 생성되었는지 확인
-        figures_dir = folder_path / "figures"
-        output_dir = folder_path / "output"
-        
-        if not figures_dir.exists():
-            raise Exception(f"figures 폴더가 생성되지 않았습니다: {figures_dir}")
-        
-        if not output_dir.exists():
-            raise Exception(f"output 폴더가 생성되지 않았습니다: {output_dir}")
-        
-        # output 폴더에 JSON 파일이 있는지 확인
-        json_files = list(output_dir.glob("*.json"))
-        if not json_files:
-            raise Exception(f"output 폴더에 JSON 파일이 생성되지 않았습니다: {output_dir}")
-        
-        print(f"✅ 임베딩 처리 완료")
-        print(f"   처리된 subsection: {result.get('processed', 0)}개")
-        print(f"   생성된 JSON 파일: {len(json_files)}개")
-        print(f"   figures 폴더: {figures_dir}")
-        print(f"   output 폴더: {output_dir}")
         
         # 6. Supabase 업데이트
         print(f"\n💾 Supabase 업데이트 중...")

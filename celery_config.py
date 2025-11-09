@@ -11,7 +11,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Redis URL 설정 (환경변수 또는 기본값)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+# Docker 환경에서는 REDIS_HOST 환경변수 사용
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+REDIS_URL = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/0")
 
 # Celery 앱 생성
 celery_app = Celery(
