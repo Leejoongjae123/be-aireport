@@ -10,6 +10,7 @@ from typing import List, Optional
 import json
 import os
 from openai import OpenAI
+from supabase import create_client, Client
 
 
 router = APIRouter(
@@ -71,9 +72,13 @@ class DiagnosisResponse(BaseModel):
     
     - categories: 카테고리별 평가 결과 리스트
     - score_average: 전체 항목의 평균 점수
+    - success: 저장 성공 여부
+    - message: 결과 메시지
     """
     categories: List[EvaluationCategory]
     score_average: float = Field(..., description="전체 항목의 평균 점수")
+    success: bool = Field(..., description="진단 및 저장 성공 여부")
+    message: str = Field(..., description="처리 결과 메시지")
 
 
 # ==================== 기본 평가 기준 ====================
@@ -157,6 +162,28 @@ def get_openai_client() -> Optional[OpenAI]:
     return OpenAI(api_key=api_key)
 
 
+def get_supabase_client() -> Optional[Client]:
+    """
+    Supabase 클라이언트를 반환합니다.
+    
+    Returns:
+        Supabase 클라이언트 인스턴스 또는 None (환경변수가 없는 경우)
+    """
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY")
+    
+    if not supabase_url or not supabase_key:
+        print("Supabase 환경변수가 설정되지 않았습니다.")
+        return None
+    
+    try:
+        client = create_client(supabase_url, supabase_key)
+        return client
+    except Exception as e:
+        print(f"Supabase 클라이언트 초기화 실패: {str(e)}")
+        return None
+
+
 def convert_evaluation_criteria(criteria: List[EvaluationCriteriaCategory]) -> List[dict]:
     """
     사용자가 제공한 한국어 키 구조를 영어 키 구조로 변환합니다.
@@ -212,7 +239,7 @@ def build_prompt(content: str, criteria: List[EvaluationCriteriaCategory]) -> st
 @router.post("/", response_model=DiagnosisResponse)
 async def run_diagnosis(request: DiagnosisRequest) -> DiagnosisResponse:
     """
-    사업계획서 진단 및 평가를 수행합니다.
+    사업계획서 진단 및 평가를 수행하고 Supabase에 저장합니다.
     
     제공된 콘텐츠를 기반으로 다양한 평가 기준에 따라 점수를 산출합니다.
     평가 기준을 제공하지 않으면 기본 평가 기준(기술성, 사업성, 공공성 등)을 사용합니다.
@@ -222,6 +249,7 @@ async def run_diagnosis(request: DiagnosisRequest) -> DiagnosisResponse:
     - 5개 카테고리 30개 항목 기본 평가 (커스터마이징 가능)
     - GPT-5 모델 기반 자동 점수 산출
     - 1-100점 척도 평가
+    - Supabase에 진단 결과 자동 저장
     
     **사용 예시:**
     ```json
@@ -240,7 +268,7 @@ async def run_diagnosis(request: DiagnosisRequest) -> DiagnosisResponse:
             - evaluation: 평가 기준 (선택사항)
     
     Returns:
-        DiagnosisResponse: 카테고리별 평가 결과
+        DiagnosisResponse: 카테고리별 평가 결과 및 저장 상태
         
     Raises:
         HTTPException 400: 유효한 콘텐츠가 없는 경우
@@ -249,9 +277,11 @@ async def run_diagnosis(request: DiagnosisRequest) -> DiagnosisResponse:
     """
     client = get_openai_client()
     if not client:
-        raise HTTPException(
-            status_code=500, 
-            detail="OPENAI_API_KEY가 설정되지 않았습니다."
+        return DiagnosisResponse(
+            categories=[],
+            score_average=0.0,
+            success=False,
+            message="OPENAI_API_KEY가 설정되지 않았습니다."
         )
 
     # 평가 기준 설정 (제공되지 않으면 기본값 사용)
@@ -265,52 +295,115 @@ async def run_diagnosis(request: DiagnosisRequest) -> DiagnosisResponse:
     ).strip()
 
     if not combined_content:
-        raise HTTPException(
-            status_code=400, 
-            detail="유효한 content 또는 query가 필요합니다."
+        return DiagnosisResponse(
+            categories=[],
+            score_average=0.0,
+            success=False,
+            message="유효한 content 또는 query가 필요합니다."
         )
 
-    # 프롬프트 생성 및 GPT 호출
-    prompt = build_prompt(combined_content, criteria)
-    response = client.responses.create(model="gpt-5", input=prompt)
-    output_text = getattr(response, "output_text", None)
-
-    if not output_text:
-        raise HTTPException(
-            status_code=502, 
-            detail="모델 응답이 비어 있습니다."
-        )
-
-    # JSON 파싱
     try:
-        parsed = json.loads(output_text)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=502, 
-            detail="모델 응답을 JSON으로 해석할 수 없습니다."
-        ) from exc
+        # 프롬프트 생성 및 GPT 호출
+        prompt = build_prompt(combined_content, criteria)
+        response = client.responses.create(model="gpt-5", input=prompt)
+        output_text = getattr(response, "output_text", None)
 
-    categories = parsed.get("categories") if isinstance(parsed, dict) else None
+        if not output_text:
+            return DiagnosisResponse(
+                categories=[],
+                score_average=0.0,
+                success=False,
+                message="모델 응답이 비어 있습니다."
+            )
 
-    if not isinstance(categories, list):
-        raise HTTPException(
-            status_code=502, 
-            detail="categories 형식이 올바르지 않습니다."
+        # JSON 파싱
+        try:
+            parsed = json.loads(output_text)
+        except json.JSONDecodeError:
+            return DiagnosisResponse(
+                categories=[],
+                score_average=0.0,
+                success=False,
+                message="모델 응답을 JSON으로 해석할 수 없습니다."
+            )
+
+        categories = parsed.get("categories") if isinstance(parsed, dict) else None
+
+        if not isinstance(categories, list):
+            return DiagnosisResponse(
+                categories=[],
+                score_average=0.0,
+                success=False,
+                message="categories 형식이 올바르지 않습니다."
+            )
+
+        # 전체 항목의 평균 점수 계산
+        total_score = 0
+        total_count = 0
+        for category in categories:
+            items = category.get("items", [])
+            for item in items:
+                score = item.get("score", 0)
+                total_score += score
+                total_count += 1
+        
+        score_average = round(total_score / total_count, 2) if total_count > 0 else 0.0
+
+        # Supabase에 저장 시도
+        supabase = get_supabase_client()
+        if supabase:
+            try:
+                diagnosis_record = {
+                    "report_uuid": None,  # standalone diagnosis
+                    "diagnosis_result": {
+                        "input_content": combined_content,
+                        "evaluation_result": parsed,
+                        "categories_count": len(categories),
+                        "total_items": total_count
+                    },
+                    "score_average": int(score_average),
+                    "duration_seconds": 0
+                }
+                
+                result = supabase.table("diagnosis").insert(diagnosis_record).execute()
+                if result.data:
+                    return DiagnosisResponse(
+                        categories=categories,
+                        score_average=score_average,
+                        success=True,
+                        message="진단이 완료되고 결과가 성공적으로 저장되었습니다."
+                    )
+                else:
+                    return DiagnosisResponse(
+                        categories=categories,
+                        score_average=score_average,
+                        success=False,
+                        message="진단 결과 저장에 실패했습니다."
+                    )
+            except Exception as e:
+                print(f"Supabase 저장 중 오류: {str(e)}")
+                return DiagnosisResponse(
+                    categories=categories,
+                    score_average=score_average,
+                    success=False,
+                    message="진단 결과 저장에 실패했습니다."
+                )
+        else:
+            return DiagnosisResponse(
+                categories=categories,
+                score_average=score_average,
+                success=False,
+                message="진단 결과 저장에 실패했습니다."
+            )
+
+    except Exception as e:
+        print(f"진단 중 오류: {str(e)}")
+        return DiagnosisResponse(
+            categories=[],
+            score_average=0.0,
+            success=False,
+            message="진단 처리 중 오류가 발생했습니다."
         )
-
-    # 전체 항목의 평균 점수 계산
-    total_score = 0
-    total_count = 0
-    for category in categories:
-        items = category.get("items", [])
-        for item in items:
-            score = item.get("score", 0)
-            total_score += score
-            total_count += 1
-    
-    score_average = round(total_score / total_count, 2) if total_count > 0 else 0.0
-
-    return DiagnosisResponse(categories=categories, score_average=score_average)
 
 
 @router.get("/criteria")

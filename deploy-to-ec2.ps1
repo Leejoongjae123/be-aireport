@@ -1,7 +1,7 @@
 # EC2 배포 스크립트 (Docker Hub 기반)
 
 # 변수 설정
-$EC2Host = "43.202.56.229"
+$EC2Host = "3.38.244.77"
 $PemFile = "ubuntu.pem"
 $DockerImage = "leejoongjae/multimodal-rag:latest"
 $RemoteDir = "/home/ubuntu/multimodal-rag"

@@ -29,14 +29,14 @@ docker login
 
 #### 1-1. EC2에 SSH 접속
 ```bash
-ssh -i ubuntu.pem ubuntu@52.79.211.44
+ssh -i ubuntu.pem ubuntu@3.38.244.77
 ```
 
 #### 1-2. 설정 스크립트 실행
 ```bash
 # 스크립트 다운로드 (로컬에서 전송)
 # 로컬 PowerShell에서:
-scp -i ubuntu.pem ec2-setup.sh ubuntu@52.79.211.44:~/
+scp -i ubuntu.pem ec2-setup.sh ubuntu@3.38.244.77:~/
 
 # EC2에서 실행
 chmod +x ec2-setup.sh
@@ -60,7 +60,7 @@ nano .env
 #### 1-4. 재로그인 (Docker 그룹 적용)
 ```bash
 exit
-ssh -i ubuntu.pem ubuntu@52.79.211.44
+ssh -i ubuntu.pem ubuntu@3.38.244.77
 ```
 
 ---
@@ -119,7 +119,7 @@ notepad deploy-to-ec2.ps1
 ### 1. 컨테이너 상태 확인
 ```bash
 # EC2에서 실행
-ssh -i ubuntu.pem ubuntu@52.79.211.44
+ssh -i ubuntu.pem ubuntu@3.38.244.77
 cd ~/multimodal-rag
 sudo docker-compose ps
 ```
@@ -137,10 +137,10 @@ sudo docker-compose logs -f celery-worker
 ### 3. API 테스트
 ```bash
 # 헬스 체크
-curl http://52.79.211.44:8000/
+curl http://3.38.244.77:8000/
 
 # 브라우저에서 API 문서 확인
-# http://52.79.211.44:8000/docs
+# http://3.38.244.77:8000/docs
 ```
 
 ---
@@ -286,7 +286,7 @@ chmod 400 ubuntu.pem
 .\deploy-to-ec2.ps1
 
 # EC2 접속
-ssh -i ubuntu.pem ubuntu@52.79.211.44
+ssh -i ubuntu.pem ubuntu@3.38.244.77
 ```
 
 ### EC2 (Bash)
@@ -324,7 +324,7 @@ sudo docker-compose up -d
     ↓
 .\deploy-to-ec2.ps1   ← EC2에서 이미지 다운로드 및 배포
     ↓
-http://52.79.211.44:8000/docs  ← API 테스트
+http://3.38.244.77:8000/docs  ← API 테스트
 ```
 
 ---

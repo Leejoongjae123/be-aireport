@@ -1,6 +1,6 @@
 # 간단한 EC2 배포 스크립트
 
-$EC2_HOST = "43.202.56.229"
+$EC2_HOST = "3.38.244.77"
 $PEM_FILE = "ubuntu.pem"
 $REMOTE_DIR = "/home/ubuntu/multimodal-rag"
 

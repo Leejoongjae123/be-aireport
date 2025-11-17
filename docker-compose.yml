@@ -40,12 +40,38 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  celery-worker:
+  celery-worker-1:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: multimodal-celery-worker
-    command: sh -c "sleep 5 && celery -A celery_worker worker --loglevel=info -P gevent --concurrency=3 -Q report_generation,report_embedding,celery -n worker@%h"
+    container_name: multimodal-celery-worker-1
+    command: sh -c "sleep 5 && celery -A celery_worker worker --loglevel=info -P gevent --concurrency=5 -Q report_generation,report_embedding,celery -n worker1@%h"
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_POOL=gevent
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  celery-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multimodal-celery-worker-2
+    command: sh -c "sleep 5 && celery -A celery_worker worker --loglevel=info -P gevent --concurrency=5 -Q report_generation,report_embedding,celery -n worker2@%h"
     env_file:
       - .env
     environment:
